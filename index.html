@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ms-vis — Model:Samples visualizer</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  canvas { display: block; }
+  #ui { position: fixed; inset: 0; pointer-events: none; font: 11px/1.4 ui-monospace, Menlo, monospace; color: #fff; }
+  #ui > * { pointer-events: auto; }
+  #midi-box {
+    position: absolute; top: 14px; left: 14px; padding: 6px 8px;
+    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12);
+    backdrop-filter: blur(6px); opacity: 1; transition: opacity .8s ease;
+  }
+  #midi-box.hidden { opacity: 0; }
+  #midi-box:hover { opacity: 1; }
+  #midi-box select {
+    background: transparent; color: #fff; border: 0; outline: 0;
+    font: inherit; max-width: 240px; cursor: pointer;
+  }
+  #midi-box select option { background: #111; color: #fff; }
+  #status { position: absolute; bottom: 14px; left: 14px; opacity: .25; letter-spacing: .08em; text-transform: uppercase; pointer-events: none; }
+  #test-beat {
+    position: absolute; bottom: 10px; right: 14px; padding: 6px 10px;
+    background: transparent; color: #ff5500; border: 1px solid #ff5500;
+    font: inherit; letter-spacing: .1em; text-transform: uppercase; cursor: pointer;
+    opacity: .06; transition: opacity .3s;
+  }
+  #test-beat:hover { opacity: .9; }
+  #test-beat.on { opacity: .6; background: rgba(255,85,0,.15); }
+  #panel {
+    position: absolute; top: 14px; right: 14px; width: 250px; padding: 10px 12px;
+    background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.14);
+    backdrop-filter: blur(8px); display: none;
+  }
+  #panel.open { display: block; }
+  #panel h4 { margin: 0 0 8px; font-weight: normal; letter-spacing: .1em; text-transform: uppercase; opacity: .6; }
+  #panel label { display: grid; grid-template-columns: 1fr 44px; gap: 2px 8px; margin-bottom: 7px; opacity: .85; }
+  #panel label span.v { text-align: right; opacity: .6; }
+  #panel input[type=range] { grid-column: 1 / 3; width: 100%; accent-color: #ff5500; margin: 0; }
+  #panel button {
+    background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.25);
+    font: inherit; padding: 4px 8px; cursor: pointer; margin-top: 4px;
+  }
+  #panel button:hover { border-color: #ff5500; color: #ff5500; }
+  #panel select { width: 100%; background: rgba(255,255,255,.06); color: #fff; border: 1px solid rgba(255,255,255,.2); font: inherit; padding: 3px; margin-bottom: 8px; }
+  #panel select option { background: #111; }
+  #panel .hint { opacity: .35; margin-top: 8px; }
+  body.idle, body.idle * { cursor: none !important; }
+  body.clean #midi-box, body.clean #status, body.clean #test-beat, body.clean #panel { display: none !important; }
+  #rec { position: absolute; top: 14px; left: 50%; width: 8px; height: 8px; margin-left: -4px; border-radius: 50%;
+         background: #ff5500; display: none; animation: blink 1s steps(2, start) infinite; }
+  #rec.on { display: block; }
+  @keyframes blink { 50% { opacity: .15; } }
+</style>
+</head>
+<body>
+<div id="ui">
+  <div id="midi-box"><select id="midi-select"><option value="">MIDI: initialising…</option></select></div>
+  <div id="rec"></div>
+  <div id="panel"></div>
+  <div id="status">no signal</div>
+  <button id="test-beat">Test Beat</button>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { RGBShiftShader } from 'three/addons/shaders/RGBShiftShader.js';
+
+/* ------------------------------------------------------------------ */
+/* GLSL                                                                */
+/* ------------------------------------------------------------------ */
+const GLSL_NOISE = /* glsl */`
+vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}
+vec4 mod289(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}
+vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}
+vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-0.85373472095314*r;}
+float snoise(vec3 v){
+  const vec2 C=vec2(1.0/6.0,1.0/3.0);
+  const vec4 D=vec4(0.0,0.5,1.0,2.0);
+  vec3 i=floor(v+dot(v,C.yyy));
+  vec3 x0=v-i+dot(i,C.xxx);
+  vec3 g=step(x0.yzx,x0.xyz);
+  vec3 l=1.0-g;
+  vec3 i1=min(g.xyz,l.zxy);
+  vec3 i2=max(g.xyz,l.zxy);
+  vec3 x1=x0-i1+C.xxx;
+  vec3 x2=x0-i2+C.yyy;
+  vec3 x3=x0-D.yyy;
+  i=mod289(i);
+  vec4 p=permute(permute(permute(
+    i.z+vec4(0.0,i1.z,i2.z,1.0))
+   +i.y+vec4(0.0,i1.y,i2.y,1.0))
+   +i.x+vec4(0.0,i1.x,i2.x,1.0));
+  float n_=0.142857142857;
+  vec3 ns=n_*D.wyz-D.xzx;
+  vec4 j=p-49.0*floor(p*ns.z*ns.z);
+  vec4 x_=floor(j*ns.z);
+  vec4 y_=floor(j-7.0*x_);
+  vec4 x=x_*ns.x+ns.yyyy;
+  vec4 y=y_*ns.x+ns.yyyy;
+  vec4 h=1.0-abs(x)-abs(y);
+  vec4 b0=vec4(x.xy,y.xy);
+  vec4 b1=vec4(x.zw,y.zw);
+  vec4 s0=floor(b0)*2.0+1.0;
+  vec4 s1=floor(b1)*2.0+1.0;
+  vec4 sh=-step(h,vec4(0.0));
+  vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy;
+  vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;
+  vec3 p0=vec3(a0.xy,h.x);
+  vec3 p1=vec3(a0.zw,h.y);
+  vec3 p2=vec3(a1.xy,h.z);
+  vec3 p3=vec3(a1.zw,h.w);
+  vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
+  p0*=norm.x;p1*=norm.y;p2*=norm.z;p3*=norm.w;
+  vec4 m=max(0.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0);
+  m=m*m;
+  return 42.0*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
+}`;
+
+const GLSL_DISP = /* glsl */`
+uniform float uTime;
+uniform float uAmp;   // 0..1  (CC74 -> amplitude)
+uniform float uFreq;  // noise frequency (CC74 -> frequency)
+uniform float uKick;  // kick envelope 0..1
+float disp(vec3 p){
+  vec3 q = p*uFreq + vec3(0.0, uTime*0.35, uTime*0.2);
+  float n  = snoise(q);
+  float n2 = snoise(q*2.3 + 7.0);
+  float spike = pow(max(n,0.0), 2.0) * uAmp * uAmp * 1.6;
+  return n*uAmp*0.45 + n2*uAmp*uAmp*0.25 + spike;
+}
+vec3 displace(vec3 p, out float d){
+  d = disp(p);
+  return p * (1.0 + uKick*0.32 + d);
+}`;
+
+const ORANGE = new THREE.Color(0xff5500);
+
+const coreVert = /* glsl */`
+${GLSL_NOISE}
+${GLSL_DISP}
+attribute float aRand;
+uniform float uPx;
+uniform float uDensity;
+uniform float uSize;
+uniform float uBright;
+varying float vAccent;
+varying float vBright;
+void main(){
+  float d;
+  vec3 p = displace(position, d);
+  vec4 mv = modelViewMatrix * vec4(p, 1.0);
+  gl_Position = projectionMatrix * mv;
+  if (aRand > uDensity) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); }
+  gl_PointSize = (1.2 + aRand*1.6) * uSize * uPx * (3.2 / -mv.z);
+  float accent = step(aRand, 0.035);                 // rare orange particles
+  vAccent = accent * (0.55 + uKick*0.45);
+  vBright = clamp(0.35 + abs(d)*1.6 + uKick*0.5, 0.0, 1.5) * uBright;
+}`;
+const coreFrag = /* glsl */`
+uniform vec3 uOrange;
+varying float vAccent;
+varying float vBright;
+void main(){
+  vec2 c = gl_PointCoord - 0.5;
+  float r = length(c);
+  if(r > 0.5) discard;
+  float a = smoothstep(0.5, 0.0, r);
+  vec3 col = mix(vec3(vBright), uOrange * 1.4, vAccent);
+  gl_FragColor = vec4(col, a);
+}`;
+
+const wireVert = /* glsl */`
+${GLSL_NOISE}
+${GLSL_DISP}
+varying float vD;
+void main(){
+  float d;
+  vec3 p = displace(position, d);
+  vD = d;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+}`;
+const wireFrag = /* glsl */`
+uniform vec3 uOrange;
+uniform float uKick;
+varying float vD;
+void main(){
+  float k = 0.10 + abs(vD)*0.5 + uKick*0.25;
+  vec3 col = mix(vec3(0.85), uOrange, clamp(uKick*0.35 + max(vD,0.0)*0.6, 0.0, 0.8));
+  gl_FragColor = vec4(col, clamp(k, 0.0, 0.7));
+}`;
+
+const hatVert = /* glsl */`
+attribute float aLife;   // 0..1 remaining
+attribute float aKind;   // 1 = orange accent
+uniform float uPx;
+varying float vLife;
+varying float vKind;
+void main(){
+  vLife = aLife; vKind = aKind;
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  gl_Position = projectionMatrix * mv;
+  gl_PointSize = (0.6 + aLife*1.8) * uPx * (3.2 / -mv.z) * step(0.001, aLife);
+}`;
+const hatFrag = /* glsl */`
+uniform vec3 uOrange;
+varying float vLife;
+varying float vKind;
+void main(){
+  vec2 c = gl_PointCoord - 0.5;
+  if(length(c) > 0.5 || vLife <= 0.001) discard;
+  vec3 col = mix(vec3(1.0), uOrange*1.5, vKind);
+  gl_FragColor = vec4(col, vLife);
+}`;
+
+const invertShader = {
+  uniforms: { tDiffuse: { value: null }, uInvert: { value: 0 } },
+  vertexShader: /* glsl */`varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse; uniform float uInvert; varying vec2 vUv;
+    void main(){ vec4 c = texture2D(tDiffuse, vUv); gl_FragColor = vec4(mix(c.rgb, 1.0 - c.rgb, uInvert), 1.0); }`
+};
+
+/* ------------------------------------------------------------------ */
+/* Scene                                                               */
+/* ------------------------------------------------------------------ */
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+const PR = Math.min(window.devicePixelRatio || 1, 2);
+renderer.setPixelRatio(PR);
+renderer.setSize(innerWidth, innerHeight);
+renderer.setClearColor(0x000000, 1);
+document.body.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 100);
+const BASE_Z = 4.6;
+camera.position.set(0, 0, BASE_Z);
+
+const shared = {
+  uTime: { value: 0 }, uAmp: { value: 0.12 }, uFreq: { value: 1.0 },
+  uKick: { value: 0 }, uDensity: { value: 1 }, uSize: { value: 1 }, uBright: { value: 1 }, uPx: { value: PR * innerHeight / 900 },
+  uOrange: { value: ORANGE }
+};
+
+const world = new THREE.Group();
+scene.add(world);
+
+// --- Core particles (fibonacci sphere) ---
+const N = 36000;
+{
+  const pos = new Float32Array(N * 3), rnd = new Float32Array(N);
+  const ga = Math.PI * (3 - Math.sqrt(5));
+  for (let i = 0; i < N; i++) {
+    const y = 1 - (i / (N - 1)) * 2, r = Math.sqrt(1 - y * y), t = ga * i;
+    pos[i*3] = Math.cos(t) * r; pos[i*3+1] = y; pos[i*3+2] = Math.sin(t) * r;
+    rnd[i] = Math.random();
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('aRand', new THREE.BufferAttribute(rnd, 1));
+  const m = new THREE.ShaderMaterial({
+    vertexShader: coreVert, fragmentShader: coreFrag, uniforms: shared,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+  });
+  world.add(new THREE.Points(g, m));
+}
+
+// --- Wireframe shell ---
+{
+  const ico = new THREE.IcosahedronGeometry(1, 5);
+  const wg = new THREE.WireframeGeometry(ico);
+  const m = new THREE.ShaderMaterial({
+    vertexShader: wireVert, fragmentShader: wireFrag, uniforms: shared,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+  });
+  world.add(new THREE.LineSegments(wg, m));
+  ico.dispose();
+}
+
+// --- Hi-hat particle pool ---
+const HAT_MAX = 900;
+const hat = {
+  pos: new Float32Array(HAT_MAX * 3), vel: new Float32Array(HAT_MAX * 3),
+  life: new Float32Array(HAT_MAX), decay: new Float32Array(HAT_MAX), kind: new Float32Array(HAT_MAX),
+  head: 0
+};
+const hatGeo = new THREE.BufferGeometry();
+hatGeo.setAttribute('position', new THREE.BufferAttribute(hat.pos, 3).setUsage(THREE.DynamicDrawUsage));
+hatGeo.setAttribute('aLife', new THREE.BufferAttribute(hat.life, 1).setUsage(THREE.DynamicDrawUsage));
+hatGeo.setAttribute('aKind', new THREE.BufferAttribute(hat.kind, 1).setUsage(THREE.DynamicDrawUsage));
+const hatPoints = new THREE.Points(hatGeo, new THREE.ShaderMaterial({
+  vertexShader: hatVert, fragmentShader: hatFrag,
+  uniforms: { uPx: shared.uPx, uOrange: shared.uOrange },
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+}));
+hatPoints.frustumCulled = false;
+world.add(hatPoints);
+
+function spawnHat(vel) {
+  const count = Math.round((10 + (vel / 127) * 26) * cfg.hatAmount);
+  for (let n = 0; n < count; n++) {
+    const i = hat.head; hat.head = (hat.head + 1) % HAT_MAX;
+    const u = Math.random() * 2 - 1, t = Math.random() * Math.PI * 2, s = Math.sqrt(1 - u * u);
+    const dx = s * Math.cos(t), dy = u, dz = s * Math.sin(t);
+    const r = 1.3 + Math.random() * 0.9;
+    hat.pos[i*3] = dx * r; hat.pos[i*3+1] = dy * r; hat.pos[i*3+2] = dz * r;
+    const sp = 0.15 + Math.random() * 0.5;
+    hat.vel[i*3] = dx * sp; hat.vel[i*3+1] = dy * sp; hat.vel[i*3+2] = dz * sp;
+    hat.life[i] = 0.4 + (vel / 127) * 0.6;
+    hat.decay[i] = 0.8 + Math.random() * 1.2;
+    hat.kind[i] = Math.random() < 0.08 ? 1 : 0;
+  }
+}
+function updateHat(dt) {
+  for (let i = 0; i < HAT_MAX; i++) {
+    if (hat.life[i] <= 0) continue;
+    hat.life[i] = Math.max(0, hat.life[i] - hat.decay[i] * dt);
+    hat.pos[i*3]   += hat.vel[i*3]   * dt;
+    hat.pos[i*3+1] += hat.vel[i*3+1] * dt;
+    hat.pos[i*3+2] += hat.vel[i*3+2] * dt;
+  }
+  hatGeo.attributes.position.needsUpdate = true;
+  hatGeo.attributes.aLife.needsUpdate = true;
+  hatGeo.attributes.aKind.needsUpdate = true;
+}
+
+// --- Rings (channels 4,5,6) ---
+const RING_R = [1.65, 1.95, 2.3];
+const rings = RING_R.map((radius, i) => {
+  const seg = 256, pts = new Float32Array(seg * 3);
+  for (let k = 0; k < seg; k++) {
+    const a = (k / seg) * Math.PI * 2;
+    pts[k*3] = Math.cos(a) * radius; pts[k*3+1] = Math.sin(a) * radius; pts[k*3+2] = 0;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pts, 3));
+  const mat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false });
+  const line = new THREE.LineLoop(g, mat);
+  const holder = new THREE.Group();
+  holder.add(line);
+  holder.rotation.set(0.6 + i * 0.9, i * 0.7, 0);
+  world.add(holder);
+  return { holder, line, mat, pulse: 0, spin: (i % 2 ? -1 : 1) * (0.15 + i * 0.05), spinTarget: 0.2, tilt: holder.rotation.x };
+});
+
+/* ------------------------------------------------------------------ */
+/* Post-processing                                                     */
+/* ------------------------------------------------------------------ */
+const composer = new EffectComposer(renderer);
+composer.setPixelRatio(PR);
+composer.setSize(innerWidth, innerHeight);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.6, 0.55, 0.05);
+composer.addPass(bloom);
+const rgb = new ShaderPass(RGBShiftShader);
+rgb.uniforms.amount.value = 0.0004;
+composer.addPass(rgb);
+const invertPass = new ShaderPass(invertShader);
+composer.addPass(invertPass);
+
+/* ------------------------------------------------------------------ */
+/* Reactive state                                                      */
+/* ------------------------------------------------------------------ */
+const DEFAULTS = {
+  kickGain: 1, kickDecay: 5.5, zoom: 0.9,
+  snareGain: 1, snareDecay: 9, shift: 0.014,
+  hatAmount: 1,
+  glowBase: 0.25, glowRange: 2.2,
+  density: 1, size: 1, bright: 1, spin: 1
+};
+const SPEC = [
+  ['kickGain',  'Kick sensitivity', 0, 2, 0.01],
+  ['kickDecay', 'Kick decay speed', 1, 15, 0.1],
+  ['zoom',      'Kick camera zoom', 0, 2, 0.01],
+  ['snareGain', 'Snare sensitivity', 0, 2, 0.01],
+  ['snareDecay','Snare decay speed', 2, 25, 0.1],
+  ['shift',     'RGB shift max', 0, 0.04, 0.001],
+  ['hatAmount', 'Hi-hat particles', 0, 3, 0.05],
+  ['glowBase',  'Bloom base', 0, 1.5, 0.01],
+  ['glowRange', 'Bloom CC range', 0, 4, 0.05],
+  ['density',   'Particle density', 0.05, 1, 0.01],
+  ['size',      'Particle size', 0.3, 3, 0.05],
+  ['bright',    'Brightness', 0.2, 2.5, 0.01],
+  ['spin',      'Rotation speed', 0, 4, 0.05]
+];
+const STORE_KEY = 'ms-vis-settings-v1';
+const cfg = { ...DEFAULTS };
+try { Object.assign(cfg, JSON.parse(localStorage.getItem(STORE_KEY) || '{}')); } catch (_) {}
+function saveCfg() { try { localStorage.setItem(STORE_KEY, JSON.stringify(cfg)); } catch (_) {} }
+
+const panel = document.getElementById('panel');
+const sliderEls = {};
+{
+  panel.innerHTML = '<h4>Settings</h4>';
+  for (const [key, label, min, max, step] of SPEC) {
+    const l = document.createElement('label');
+    const t = document.createElement('span'); t.textContent = label;
+    const v = document.createElement('span'); v.className = 'v';
+    const inp = document.createElement('input');
+    inp.type = 'range'; inp.min = min; inp.max = max; inp.step = step;
+    const show = () => { v.textContent = (+cfg[key]).toFixed(step < 0.01 ? 3 : step < 0.1 ? 2 : 1); };
+    inp.value = cfg[key]; show();
+    inp.addEventListener('input', () => { cfg[key] = +inp.value; show(); saveCfg(); });
+    l.append(t, v, inp);
+    panel.appendChild(l);
+    sliderEls[key] = [inp, show];
+  }
+  const reset = document.createElement('button');
+  reset.textContent = 'Reset';
+  reset.addEventListener('click', () => {
+    Object.assign(cfg, DEFAULTS); saveCfg();
+    for (const k in sliderEls) { sliderEls[k][0].value = cfg[k]; sliderEls[k][1](); }
+  });
+  panel.appendChild(reset);
+  const hint = document.createElement('div');
+  hint.className = 'hint'; hint.textContent = 'H panel · F fullscreen · R record · T test beat';
+  panel.appendChild(hint);
+  addEventListener('keydown', (e) => {
+    if ((e.key === 'h' || e.key === 'H') && !e.metaKey && !e.ctrlKey && !e.altKey) panel.classList.toggle('open');
+  });
+}
+
+const S = {
+  kick: 0, snare: 0, invertUntil: 0,
+  cutoff: 0.1, cutoffT: 0.1,     // CC74 normalised
+  glow: 0.35, glowT: 0.35        // CC12/13 normalised
+};
+const statusEl = document.getElementById('status');
+let statusTimer = 0;
+function flashStatus(txt) {
+  statusEl.textContent = txt; statusEl.style.opacity = '.7';
+  clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => { statusEl.style.opacity = ''; }, 400);
+}
+
+function onNote(ch, note, vel) {
+  const v = vel / 127;
+  if (ch === 0) {                       // Kick
+    S.kick = Math.max(S.kick, (0.35 + v * 0.65) * cfg.kickGain);
+    flashStatus(`ch1 kick ${vel}`);
+  } else if (ch === 1) {                // Snare
+    S.snare = Math.max(S.snare, (0.4 + v * 0.6) * cfg.snareGain);
+    S.invertUntil = performance.now() + 100;
+    flashStatus(`ch2 snare ${vel}`);
+  } else if (ch === 2) {                // Hi-hat
+    spawnHat(vel);
+    flashStatus(`ch3 hat ${vel}`);
+  } else if (ch >= 3 && ch <= 5) {      // Rings
+    const r = rings[ch - 3];
+    const pc = note % 12;
+    r.pulse = Math.max(r.pulse, 0.4 + v * 0.6);
+    r.spin += (pc % 2 ? -1 : 1) * (0.6 + (note % 24) / 24 * 2.4) * (0.5 + v);
+    r.tilt = (pc / 12) * Math.PI;
+    flashStatus(`ch${ch + 1} ring note ${note} ${vel}`);
+  }
+}
+function onCC(ch, cc, val) {
+  const v = val / 127;
+  if (cc === 74) { S.cutoffT = v; flashStatus(`cc74 cutoff ${val}`); }
+  else if (cc === 12 || cc === 13) { S.glowT = v; flashStatus(`cc${cc} glow ${val}`); }
+}
+function handleMIDI(data) {
+  const st = data[0], type = st & 0xf0, ch = st & 0x0f;
+  if (ch > 5) return;                                   // channels 1–6 only
+  if (type === 0x90 && data[2] > 0) onNote(ch, data[1], data[2]);
+  else if (type === 0xb0) onCC(ch, data[1], data[2]);
+}
+
+/* ------------------------------------------------------------------ */
+/* Web MIDI                                                            */
+/* ------------------------------------------------------------------ */
+const box = document.getElementById('midi-box');
+const select = document.getElementById('midi-select');
+let midi = null, hideTimer = 0, currentInput = null;
+
+function scheduleHide() {
+  clearTimeout(hideTimer);
+  hideTimer = setTimeout(() => box.classList.add('hidden'), 3000);
+}
+function bindInput(id) {
+  if (currentInput) currentInput.onmidimessage = null;
+  currentInput = null;
+  if (!midi || !id) return;
+  const inp = midi.inputs.get(id);
+  if (!inp) return;
+  inp.onmidimessage = (e) => handleMIDI(e.data);
+  currentInput = inp;
+}
+function refreshInputs() {
+  const prev = select.value;
+  const inputs = [...midi.inputs.values()];
+  select.innerHTML = '';
+  if (!inputs.length) {
+    select.innerHTML = '<option value="">no MIDI input — use Test Beat</option>';
+    box.classList.remove('hidden'); clearTimeout(hideTimer);
+    bindInput(null);
+    return;
+  }
+  for (const i of inputs) {
+    const o = document.createElement('option');
+    o.value = i.id; o.textContent = i.name || i.id;
+    select.appendChild(o);
+  }
+  const keep = inputs.find(i => i.id === prev);
+  const pick = keep || inputs.find(i => /model|elektron/i.test(i.name || '')) || inputs[0];
+  select.value = pick.id;
+  bindInput(pick.id);
+  box.classList.remove('hidden');
+  scheduleHide();
+}
+select.addEventListener('change', () => { bindInput(select.value); scheduleHide(); });
+
+if (navigator.requestMIDIAccess) {
+  navigator.requestMIDIAccess().then(access => {
+    midi = access;
+    midi.onstatechange = refreshInputs;
+    refreshInputs();
+  }).catch(() => {
+    select.innerHTML = '<option value="">MIDI access denied — use Test Beat</option>';
+  });
+} else {
+  select.innerHTML = '<option value="">Web MIDI unsupported — use Chrome</option>';
+}
+
+/* ------------------------------------------------------------------ */
+/* Test Beat (simulated groove, same handlers as real MIDI)            */
+/* ------------------------------------------------------------------ */
+const testBtn = document.getElementById('test-beat');
+let testOn = false, testStep = 0, testTimer = 0, testStart = 0;
+const BPM = 122, STEP_MS = 60000 / BPM / 4;
+const jitter = (b, r = 18) => Math.max(1, Math.min(127, Math.round(b + (Math.random() - .5) * r)));
+function testTick() {
+  const s = testStep % 16, bar = Math.floor(testStep / 16);
+  if (s % 4 === 0 || s === 10) handleMIDI([0x90, 36, jitter(s % 4 === 0 ? 118 : 90)]);
+  if (s === 4 || s === 12 || (bar % 4 === 3 && s === 15)) handleMIDI([0x91, 38, jitter(105)]);
+  if (s % 2 === 0) handleMIDI([0x92, 42, jitter(s % 4 === 2 ? 100 : 60, 30)]);
+  else if (Math.random() < 0.25) handleMIDI([0x92, 46, jitter(50, 30)]);
+  if (s % 8 === 2) handleMIDI([0x93, 48 + Math.floor(Math.random() * 12), jitter(90)]);
+  if (s % 8 === 6) handleMIDI([0x94, 55 + Math.floor(Math.random() * 12), jitter(80)]);
+  if (s === 0 && bar % 2 === 0) handleMIDI([0x95, 60 + Math.floor(Math.random() * 12), jitter(100)]);
+  // slow CC sweeps
+  const t = (performance.now() - testStart) / 1000;
+  handleMIDI([0xb0, 74, Math.round((0.5 + 0.5 * Math.sin(t * 0.35)) * 127)]);
+  handleMIDI([0xb0, s % 2 ? 12 : 13, Math.round((0.5 + 0.5 * Math.sin(t * 0.22 + 1)) * 127)]);
+  testStep++;
+}
+testBtn.addEventListener('click', () => {
+  testOn = !testOn;
+  testBtn.classList.toggle('on', testOn);
+  testBtn.textContent = testOn ? 'Stop Beat' : 'Test Beat';
+  clearInterval(testTimer);
+  if (testOn) { testStep = 0; testStart = performance.now(); testTimer = setInterval(testTick, STEP_MS); }
+});
+
+/* ------------------------------------------------------------------ */
+/* Projector mode: fullscreen, idle cursor, recording                  */
+/* ------------------------------------------------------------------ */
+const recDot = document.getElementById('rec');
+let idleTimer = 0;
+function wakeCursor() {
+  document.body.classList.remove('idle');
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => document.body.classList.add('idle'), 2000);
+}
+addEventListener('mousemove', wakeCursor);
+wakeCursor();
+
+function toggleFullscreen() {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen().catch(() => {});
+}
+document.addEventListener('fullscreenchange', () => {
+  document.body.classList.toggle('clean', !!document.fullscreenElement);
+});
+
+// Audio input for recording (Model:Samples is a USB audio device)
+let audioStream = null;
+{
+  const wrap = document.createElement('div');
+  wrap.innerHTML = '<div style="opacity:.6;margin-bottom:3px">Audio input (for recording)</div>';
+  const sel = document.createElement('select');
+  wrap.appendChild(sel);
+  const info = document.createElement('div');
+  info.style.cssText = 'opacity:.7;margin:-4px 0 4px;min-height:1.4em';
+  info.textContent = 'not connected';
+  const meter = document.createElement('div');
+  meter.style.cssText = 'height:3px;background:rgba(255,255,255,.12);margin-bottom:10px';
+  const bar = document.createElement('div');
+  bar.style.cssText = 'height:100%;width:0;background:#ff5500';
+  meter.appendChild(bar);
+  wrap.append(info, meter);
+  panel.insertBefore(wrap, panel.querySelector('.hint'));
+  let actx = null, analyser = null, buf = null, meterTimer = 0;
+  function startMeter(stream) {
+    stopMeter();
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+    actx.resume();
+    analyser = actx.createAnalyser(); analyser.fftSize = 1024;
+    actx.createMediaStreamSource(stream).connect(analyser);   // not routed to speakers
+    buf = new Float32Array(analyser.fftSize);
+    meterTimer = setInterval(() => {
+      analyser.getFloatTimeDomainData(buf);
+      let pk = 0; for (const v of buf) pk = Math.max(pk, Math.abs(v));
+      bar.style.width = Math.min(100, pk * 140) + '%';
+    }, 60);
+  }
+  function stopMeter() {
+    clearInterval(meterTimer); bar.style.width = '0';
+    if (actx) { actx.close(); actx = null; }
+  }
+  async function fillDevices() {
+    let devs = [];
+    try { devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput'); } catch (_) {}
+    const cur = audioStream && audioStream.getAudioTracks()[0]?.getSettings().deviceId;
+    sel.innerHTML = '<option value="">none (silent)</option>';
+    if (!devs.some(d => d.deviceId && d.label)) {
+      // Chrome hides ids/labels until mic permission is granted
+      sel.innerHTML += '<option value="__grant">Allow audio access…</option>';
+      sel.value = '';
+      return;
+    }
+    for (const d of devs.filter(d => d.deviceId)) {
+      const o = document.createElement('option');
+      o.value = d.deviceId; o.textContent = d.label || 'audio input';
+      sel.appendChild(o);
+    }
+    sel.value = cur || '';
+  }
+    sel.addEventListener('change', async () => {
+    if (sel.value === '__grant') {
+      try {
+        const tmp = await navigator.mediaDevices.getUserMedia({ audio: true });
+        tmp.getTracks().forEach(t => t.stop());
+        info.textContent = 'allowed — pick an input';
+      } catch (e) { info.textContent = 'error: ' + e.name; }
+      await fillDevices();
+      return;
+    }
+    if (audioStream) { audioStream.getTracks().forEach(t => t.stop()); audioStream = null; }
+    stopMeter();
+    if (!sel.value) { info.textContent = 'not connected (recording will be silent)'; return; }
+    try {
+      audioStream = await navigator.mediaDevices.getUserMedia({
+        audio: { deviceId: { exact: sel.value }, echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+      });
+      await fillDevices();
+      startMeter(audioStream);
+      info.textContent = '✓ connected: ' + (audioStream.getAudioTracks()[0].label || 'input');
+    } catch (e) { sel.value = ''; info.textContent = 'error: ' + e.name; }
+  });
+  fillDevices();
+}
+
+let recorder = null, recChunks = [];
+function toggleRecord() {
+  if (recorder) { recorder.stop(); return; }
+  if (!window.MediaRecorder) { flashStatus('recording unsupported'); return; }
+  const stream = renderer.domElement.captureStream(60);
+  if (audioStream) audioStream.getAudioTracks().forEach(t => stream.addTrack(t));
+  const mime = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'].find(m => MediaRecorder.isTypeSupported(m));
+  recChunks = [];
+  recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 16e6, audioBitsPerSecond: 192000 });
+  recorder.ondataavailable = (e) => { if (e.data.size) recChunks.push(e.data); };
+  recorder.onstop = () => {
+    const blob = new Blob(recChunks, { type: 'video/webm' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `ms-vis-${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    recorder = null; recChunks = [];
+    recDot.classList.remove('on');
+  };
+  recorder.start(1000);
+  flashStatus(stream.getAudioTracks().length ? 'rec + audio' : 'rec (no audio input selected)');
+  recDot.classList.add('on');
+}
+addEventListener('keydown', (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 'f') toggleFullscreen();
+  else if (k === 'r') toggleRecord();
+  else if (k === 't') testBtn.click();
+});
+
+/* ------------------------------------------------------------------ */
+/* Loop                                                                */
+/* ------------------------------------------------------------------ */
+const clock = new THREE.Clock();
+let camAngle = 0;
+function frame() {
+  requestAnimationFrame(frame);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const now = performance.now();
+  shared.uTime.value += dt;
+
+  // envelopes
+  S.kick  *= Math.exp(-dt * cfg.kickDecay);
+  S.snare *= Math.exp(-dt * cfg.snareDecay);
+  const ease = 1 - Math.exp(-dt * 6);
+  S.cutoff += (S.cutoffT - S.cutoff) * ease;
+  S.glow   += (S.glowT   - S.glow)   * ease;
+
+  // CC74: 0 -> smooth sphere, 127 -> chaotic hedgehog
+  shared.uAmp.value  = S.cutoff * S.cutoff * 0.95 + (S.cutoff > 0.001 ? 0.01 : 0);
+  shared.uFreq.value = 0.7 + S.cutoff * 3.3;
+  shared.uKick.value = S.kick;
+  shared.uDensity.value = cfg.density;
+  shared.uSize.value = cfg.size;
+  shared.uBright.value = cfg.bright;
+
+  // CC12/13: bloom intensity
+  bloom.strength = cfg.glowBase + S.glow * cfg.glowRange + S.kick * 0.5;
+
+  // snare: chromatic aberration + 100 ms invert
+  rgb.uniforms.amount.value = 0.0004 + S.snare * cfg.shift;
+  rgb.uniforms.angle.value += dt * 0.6;
+  invertPass.uniforms.uInvert.value = now < S.invertUntil ? 1 : 0;
+
+  // camera: slow orbit + kick zoom
+  camAngle += dt * 0.08;
+  const dist = BASE_Z - S.kick * cfg.zoom;
+  camera.position.set(Math.sin(camAngle) * dist * 0.35, Math.sin(camAngle * 0.7) * 0.4, Math.cos(camAngle * 0.5) * 0.15 + dist);
+  camera.lookAt(0, 0, 0);
+  world.rotation.y += dt * (0.08 + S.cutoff * 0.12) * cfg.spin;
+
+  // rings
+  for (const r of rings) {
+    r.pulse *= Math.exp(-dt * 4);
+    r.spin *= Math.exp(-dt * 0.5);
+    r.holder.rotation.z += r.spin * dt;
+    r.holder.rotation.x += (r.tilt - r.holder.rotation.x) * Math.min(1, dt * 2);
+    const sc = 1 + r.pulse * 0.18;
+    r.holder.scale.setScalar(sc);
+    r.mat.opacity = 0.2 + r.pulse * 0.7;
+    r.mat.color.setRGB(1, 1, 1).lerp(ORANGE, Math.min(1, r.pulse * 1.2));
+  }
+
+  updateHat(dt);
+  composer.render();
+}
+frame();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+  shared.uPx.value = PR * innerHeight / 900;
+});
+</script>
+</body>
+</html>
