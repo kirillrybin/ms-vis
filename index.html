@@ -567,8 +567,8 @@ function testTick() {
   if (s === 0 && bar % 2 === 0) handleMIDI([0x95, 60 + Math.floor(Math.random() * 12), jitter(100)]);
   // slow CC sweeps
   const t = (performance.now() - testStart) / 1000;
-  handleMIDI([0xb0, 74, Math.round((0.5 + 0.5 * Math.sin(t * 0.35)) * 127)]);
-  handleMIDI([0xb0, s % 2 ? 12 : 13, Math.round((0.5 + 0.5 * Math.sin(t * 0.22 + 1)) * 127)]);
+  handleMIDI([0xb0, 74, Math.round((0.5 + 0.5 * Math.sin(t * 0.35 + 0.6)) * 127)]);
+  handleMIDI([0xb0, s % 2 ? 12 : 13, Math.round((0.5 + 0.5 * Math.sin(t * 0.22 + 4)) * 127)]);
   testStep++;
 }
 testBtn.addEventListener('click', () => {
@@ -578,6 +578,12 @@ testBtn.addEventListener('click', () => {
   clearInterval(testTimer);
   if (testOn) { testStep = 0; testStart = performance.now(); testTimer = setInterval(testTick, STEP_MS); }
 });
+
+// ?demo — start Test Beat automatically with a clean UI (used for screenshots)
+if (new URLSearchParams(location.search).has('demo')) {
+  document.body.classList.add('clean');
+  testBtn.click();
+}
 
 /* ------------------------------------------------------------------ */
 /* Projector mode: fullscreen, idle cursor, recording                  */
