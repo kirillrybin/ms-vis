@@ -61,6 +61,7 @@ CC messages are accepted from any of channels 1–6.
 ## Under the hood
 
 - **Core:** 36,000 particles (`Points`) on a Fibonacci sphere plus a wireframe icosphere (`LineSegments`). Both are deformed in the vertex shader by 3D simplex noise.
-- **Hi-hats:** a pool of 900 particles updated on the CPU.
+- **Hi-hats:** a pool of 900 particles whose motion is computed entirely in the vertex shader. The CPU only writes spawn data when a hat is hit.
+- **Auto quality:** if FPS stays below 45, particle density is lowered (and, as a last resort, the pixel ratio drops to 1); it recovers slowly when FPS is stable. The current FPS and quality level are shown in the settings panel title. It can be switched off with the "Auto quality" slider.
 - **Post-processing:** `EffectComposer` with `UnrealBloomPass`, `RGBShiftShader` and a custom inversion pass.
 - **All code** (HTML, CSS, JS, GLSL) lives in a single `index.html` file.
