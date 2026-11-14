@@ -4,6 +4,10 @@ An audio-reactive visualizer for the Elektron Model:Samples in a single HTML fil
 
 **Live demo:** https://kirillrybin.github.io/ms-vis/
 
+![ms-vis screenshot](docs/screenshot.png)
+
+Open the demo with `?demo` (https://kirillrybin.github.io/ms-vis/?demo) to start the simulated beat automatically with a clean UI.
+
 ## Getting started
 
 1. Open the live demo in Google Chrome, or run a local server with `python3 -m http.server 8000` in the project folder and open http://localhost:8000. Opening `index.html` via `file://` also works, but Chrome does not remember the microphone permission there, so you have to grant it again on every load.
@@ -65,3 +69,7 @@ CC messages are accepted from any of channels 1–6.
 - **Auto quality:** if FPS stays below 45, particle density is lowered (and, as a last resort, the pixel ratio drops to 1); it recovers slowly when FPS is stable. The current FPS and quality level are shown in the settings panel title. It can be switched off with the "Auto quality" slider.
 - **Post-processing:** `EffectComposer` with `UnrealBloomPass`, `RGBShiftShader` and a custom inversion pass.
 - **All code** (HTML, CSS, JS, GLSL) lives in a single `index.html` file.
+
+## License
+
+[MIT](LICENSE) © 2026 Kirill Rybin
