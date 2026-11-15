@@ -560,6 +560,16 @@ const OPTS_KEY = 'ms-vis-midiopts-v1';
 const midiOpts = { pc: true };                       // Program Change selects a preset
 try { Object.assign(midiOpts, JSON.parse(localStorage.getItem(OPTS_KEY) || '{}')); } catch (_) {}
 function saveOpts() { try { localStorage.setItem(OPTS_KEY, JSON.stringify(midiOpts)); } catch (_) {} }
+// Track roles: what each MIDI channel (1-6) makes the visuals do. Stored apart from the presets.
+const ROLES = [['kick', 'Kick'], ['snare', 'Snare'], ['hat', 'Hi-hat'], ['ring1', 'Ring 1'], ['ring2', 'Ring 2'], ['ring3', 'Ring 3'], ['none', 'Ignore']];
+const DEFAULT_ROLES = ['kick', 'snare', 'hat', 'ring1', 'ring2', 'ring3'];
+const ROLES_KEY = 'ms-vis-roles-v1';
+const roles = [...DEFAULT_ROLES];
+try {
+  const r = JSON.parse(localStorage.getItem(ROLES_KEY) || 'null');
+  if (Array.isArray(r)) r.slice(0, 6).forEach((v, i) => { if (ROLES.some(x => x[0] === v)) roles[i] = v; });
+} catch (_) {}
+function saveRoles() { try { localStorage.setItem(ROLES_KEY, JSON.stringify(roles)); } catch (_) {} }
 let onMapChange = () => {}, onLastMsg = () => {}, applyPreset = () => {};
 
 const panel = document.getElementById('panel');
@@ -733,10 +743,33 @@ const groupBody = {};                      // group id -> container; other parts
   const pcText = document.createElement('span');
   pcText.textContent = 'Program Change selects a preset: program 0 → slot 1 … 4 → slot 5, then it repeats (5 → slot 1)';
   pcRow.append(pcBox, pcText);
+
+  // Track roles: one select per MIDI channel
+  const rolesHead = document.createElement('div');
+  rolesHead.style.cssText = 'opacity:.6;margin:10px 0 4px';
+  rolesHead.textContent = 'Track roles (channel → reaction)';
+  const rolesGrid = document.createElement('div');
+  rolesGrid.style.cssText = 'display:grid;grid-template-columns:auto 1fr;gap:4px 8px;align-items:center;margin-bottom:6px';
+  const roleSels = [];
+  for (let i = 0; i < 6; i++) {
+    const lab = document.createElement('span');
+    lab.style.opacity = '.85'; lab.textContent = `Ch ${i + 1}`;
+    const sel = document.createElement('select');
+    sel.style.margin = '0';
+    for (const [id, name] of ROLES) { const o = document.createElement('option'); o.value = id; o.textContent = name; sel.appendChild(o); }
+    sel.value = roles[i];
+    sel.addEventListener('change', () => { roles[i] = sel.value; saveRoles(); });
+    roleSels.push(sel);
+    rolesGrid.append(lab, sel);
+  }
+  const rolesReset = document.createElement('button');
+  rolesReset.textContent = 'Default roles';
+  rolesReset.style.cssText = 'margin:2px 0 6px';
+  rolesReset.addEventListener('click', () => { DEFAULT_ROLES.forEach((r, i) => { roles[i] = r; roleSels[i].value = r; }); saveRoles(); });
   mapReset.addEventListener('click', () => { Object.assign(midiMap, defaultMap()); learnTarget = null; saveMap(); renderMap(); });
   groupBody.midi.append(lastMsg, statsEl,
     ...TARGETS.map(t => mapRow(t.label, t.id, () => midiMap[t.id].length ? 'CC ' + midiMap[t.id].join(' / ') : '—')),
-    mapReset, pcRow);
+    mapReset, pcRow, rolesHead, rolesGrid, rolesReset);
   renderMap();
 
   const reset = document.createElement('button');
@@ -786,6 +819,7 @@ const WAVE_ANCHOR = [
 const _q = new THREE.Quaternion();
 const _tmp = new THREE.Vector3();
 function onNote(ch, note, vel) {
+  if (roles[ch] === 'none') return;                     // channel is set to be ignored
   const v = vel / 127;
   {
     const lon = (note % 12) / 12 * Math.PI * 2;
@@ -796,18 +830,19 @@ function onNote(ch, note, vel) {
     S.waveAge[ch] = 0;
     S.wave[ch] = (0.55 + v * 0.45) * cfg.ripple;
   }
-  if (ch === 0) {                       // Kick
+  const role = roles[ch];
+  if (role === 'kick') {
     S.kick = Math.max(S.kick, (0.35 + v * 0.65) * cfg.kickGain);
-    flashStatus(`ch1 kick ${vel}`);
-  } else if (ch === 1) {                // Snare
+    flashStatus(`ch${ch + 1} kick ${vel}`);
+  } else if (role === 'snare') {
     S.snare = Math.max(S.snare, (0.4 + v * 0.6) * cfg.snareGain);
     S.invertUntil = performance.now() + 100;
-    flashStatus(`ch2 snare ${vel}`);
-  } else if (ch === 2) {                // Hi-hat
+    flashStatus(`ch${ch + 1} snare ${vel}`);
+  } else if (role === 'hat') {
     spawnHat(vel);
-    flashStatus(`ch3 hat ${vel}`);
-  } else if (ch >= 3 && ch <= 5) {      // Rings
-    const r = rings[ch - 3];
+    flashStatus(`ch${ch + 1} hat ${vel}`);
+  } else if (role.startsWith('ring')) {
+    const r = rings[+role.slice(4) - 1];
     const pc = note % 12;
     r.pulse = Math.max(r.pulse, 0.4 + v * 0.6);
     r.note = note; r.hold = performance.now() + 1500;   // sustained while the key is held (max 1.5 s)
@@ -823,7 +858,11 @@ function onCC(ch, cc, val) {
   }
 }
 function onNoteOff(ch, note) {
-  if (ch >= 3 && ch <= 5 && rings[ch - 3].note === note) rings[ch - 3].hold = 0;   // let the ring fade out
+  const role = roles[ch];
+  if (role.startsWith('ring')) {                         // let the ring fade out when its key is released
+    const r = rings[+role.slice(4) - 1];
+    if (r.note === note) r.hold = 0;
+  }
 }
 function fireBeat(isBar) {
   const k = cfg.clockFx;

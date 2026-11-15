@@ -45,7 +45,7 @@ Values are saved in the browser's `localStorage`. **Reset all settings** at the 
 
 ## MIDI mapping
 
-Channels 1–6 are used, which are the Model:Samples tracks by default.
+Channels 1–6 are used, which are the Model:Samples tracks by default. The table below shows the default roles; each channel can be given any other role (see *Track roles* below).
 
 | Channel | Role | Reaction |
 |---------|------|----------|
@@ -65,6 +65,16 @@ Note On velocity is taken into account. Every note also sends a ripple across th
 | — | (unassigned) | *Particle size* and *Rotation*: bind any knob with **Learn** |
 
 CC messages are accepted from any of channels 1–6. These are the defaults, every row can be rebound to any CC (see below). A knob can drive only one thing: binding a CC that is already used moves it.
+
+### Track roles
+
+In the *MIDI & clock* group of the settings panel, *Track roles* lets you decide what each MIDI channel does, so the visuals match how your tracks are really used:
+
+- **Kick**, **Snare**, **Hi-hat**: the reactions described above;
+- **Ring 1**, **Ring 2**, **Ring 3**: pulse and spin one of the three wireframe rings, driven by the note;
+- **Ignore**: notes on that channel do nothing (not even the ripple of light).
+
+Several channels may share a role, for example two kick tracks. Every channel that is not ignored also sends its own ripple across the core, whatever its role is. **Default roles** restores the table above. The roles are stored apart from the presets, like the CC mapping and the Program Change option, so loading a preset never changes them. Test Beat plays on channels 1–6 and follows the roles too.
 
 ### Program Change
 
