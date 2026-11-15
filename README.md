@@ -60,8 +60,11 @@ Note On velocity is taken into account. Every note also sends a ripple across th
 |----|-----------|--------|
 | 74 | Filter Cutoff | Noise frequency and amplitude: from a smooth sphere (0) to a chaotic hedgehog (127) |
 | 12, 13 | Delay / Reverb | Bloom intensity |
+| 71 | Resonance | Sharpness of the shape: low values soften the spikes, high values make the surface craggy and add spikes even on a smooth sphere |
+| 7 | Volume | Brightness: full volume is the normal look, lower values dim the scene |
+| — | (unassigned) | *Particle size* and *Rotation*: bind any knob with **Learn** |
 
-CC messages are accepted from any of channels 1–6.
+CC messages are accepted from any of channels 1–6. These are the defaults, every row can be rebound to any CC (see below). A knob can drive only one thing: binding a CC that is already used moves it.
 
 ### MIDI clock
 
@@ -85,7 +88,7 @@ Open the settings panel (**H**) and the *MIDI & clock* group. It shows the last 
 - both counters stay at 0: nothing reaches the browser from the selected input. Pick another input, or choose **All inputs** in the selector in the top-left corner (it appears when more than one input exists), and check the cable, the USB connection and the device's MIDI port settings.
 - *messages* grows but nothing happens on screen: the message is probably on a channel above 6 or a CC that is not mapped, see the last message above. Some Elektron devices can send parameter changes as NRPN instead of plain CC, which this visualizer does not read.
 
-If the knob appears with a different CC number than the defaults, press **Learn** next to *Cutoff CC* or *Bloom CC*, then turn the knob on the device. That CC is bound immediately and remembered. **Default CCs** restores 74 for the cutoff and 12 / 13 for the bloom. The mapping is stored separately from the presets, so loading a preset never changes it.
+If the knob appears with a different CC number than the defaults, press **Learn** next to the parameter (*Cutoff*, *Bloom*, *Sharpness*, *Brightness*, *Particle size* or *Rotation*), then turn the knob on the device. That CC is bound immediately and remembered; **×** unassigns it. **Default CCs** restores the table above. The mapping is stored separately from the presets, so loading a preset never changes it.
 
 ## Under the hood
 

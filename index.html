@@ -157,6 +157,7 @@ uniform float uAmp;   // 0..1  (CC74 -> amplitude)
 uniform float uFreq;  // noise frequency (CC74 -> frequency)
 uniform float uKick;  // kick envelope 0..1
 uniform float uBeat;  // beat pulse from MIDI clock 0..1
+uniform float uSharp; // sharpness of the shape (MIDI-controlled), 1 = neutral
 uniform vec3  uBand;  // MIDI clock scanner: x = angle (rad), y = strength
 uniform vec3  uWaveDir[6]; // origin of the ripple of each MIDI channel
 uniform float uWaveAge[6]; // seconds since the hit
@@ -188,8 +189,9 @@ float disp(vec3 p){
   float n  = snoise(q);
   float k2 = uAmp * uAmp;
   float n2 = k2 > 0.002 ? snoise(q*2.3 + 7.0) : 0.0;   // 2nd octave only when audible
-  float spike = pow(max(n,0.0), 2.0) * uAmp * uAmp * 1.6;
-  return n*uAmp*0.45 + n2*uAmp*uAmp*0.25 + spike;
+  float spike = pow(max(n,0.0), 2.0) * uAmp * uAmp * 1.6 * uSharp;
+  float extra = max(uSharp - 1.0, 0.0) * 0.3 * pow(max(n,0.0), 2.0);   // sharpness above neutral adds spikes even on a smooth sphere
+  return n*uAmp*0.45 + n2*uAmp*uAmp*0.25*uSharp + spike + extra;
 }
 vec3 displace(vec3 p, out float d, out float wv){
   wv = waves(p);
@@ -322,7 +324,7 @@ camera.position.set(0, 0, BASE_Z);
 
 const shared = {
   uTime: { value: 0 }, uAmp: { value: 0.12 }, uFreq: { value: 1.0 },
-  uKick: { value: 0 }, uBeat: { value: 0 }, uBand: { value: new THREE.Vector3() },
+  uKick: { value: 0 }, uBeat: { value: 0 }, uSharp: { value: 1 }, uBand: { value: new THREE.Vector3() },
   uWaveDir: { value: Array.from({ length: 6 }, () => new THREE.Vector3(0, 1, 0)) },
   uWaveAge: { value: new Array(6).fill(0) }, uWaveAmt: { value: new Array(6).fill(0) },
   uDensity: { value: 1 }, uSize: { value: 1 }, uBright: { value: 1 }, uPx: { value: PR * innerHeight / 900 },
@@ -520,15 +522,35 @@ const cfg = { ...DEFAULTS };
 try { Object.assign(cfg, JSON.parse(localStorage.getItem(STORE_KEY) || '{}')); } catch (_) {}
 function saveCfg() { try { localStorage.setItem(STORE_KEY, JSON.stringify(cfg)); } catch (_) {} }
 
-// MIDI CC mapping lives apart from the look settings, so presets never change it
-const MAP_KEY = 'ms-vis-midimap-v1';
-const midiMap = { cutoff: 74, bloom: [12, 13] };
+// MIDI CC mapping lives apart from the look settings, so presets never change it.
+// Every target can be bound to any CC with Learn. `v` is the 0..1 value of the knob.
+const TARGETS = [
+  { id: 'cutoff', label: 'Cutoff (noise)', defaults: [74],     set: v => { S.cutoffT = v; } },
+  { id: 'bloom',  label: 'Bloom (glow)',   defaults: [12, 13], set: v => { S.glowT = v; } },
+  { id: 'sharp',  label: 'Sharpness',      defaults: [71],     set: v => { S.modT.sharp = v; } },
+  { id: 'bright', label: 'Brightness',     defaults: [7],      set: v => { S.modT.bright = v; } },
+  { id: 'size',   label: 'Particle size',  defaults: [],       set: v => { S.modT.size = v; } },
+  { id: 'spin',   label: 'Rotation',       defaults: [],       set: v => { S.modT.spin = v; } }
+];
+const MAP_KEY = 'ms-vis-midimap-v2';
+const defaultMap = () => Object.fromEntries(TARGETS.map(t => [t.id, [...t.defaults]]));
+const midiMap = defaultMap();
 try {
   const m = JSON.parse(localStorage.getItem(MAP_KEY) || 'null');
-  if (m && Number.isInteger(m.cutoff) && Array.isArray(m.bloom)) { midiMap.cutoff = m.cutoff; midiMap.bloom = m.bloom.filter(Number.isInteger); }
+  if (m) {
+    for (const t of TARGETS) if (Array.isArray(m[t.id])) midiMap[t.id] = m[t.id].filter(Number.isInteger);
+  } else {                                // migrate the first version: { cutoff: n, bloom: [..] }
+    const old = JSON.parse(localStorage.getItem('ms-vis-midimap-v1') || 'null');
+    if (old && Number.isInteger(old.cutoff)) midiMap.cutoff = [old.cutoff];
+    if (old && Array.isArray(old.bloom)) midiMap.bloom = old.bloom.filter(Number.isInteger);
+  }
 } catch (_) {}
+{ // one knob drives one thing: if a CC is claimed twice, the earlier target in the list keeps it
+  const seen = new Set();
+  for (const t of TARGETS) midiMap[t.id] = midiMap[t.id].filter(c => !seen.has(c) && seen.add(c));
+}
 function saveMap() { try { localStorage.setItem(MAP_KEY, JSON.stringify(midiMap)); } catch (_) {} }
-let learnTarget = null;                 // 'cutoff' | 'bloom' | null
+let learnTarget = null;                 // id of the target waiting for a knob, or null
 const midiStats = { inputs: [], port: '—', ch: 0, rt: 0 };
 // MIDI clock: 24 pulses per quarter note, aligned by Start / Song Position
 const CLK = { tick: 0, bar: 0, running: null, times: [], bpm: 0, lastTick: 0 };   // running: null = unknown, treated as running
@@ -676,7 +698,9 @@ const groupBody = {};                      // group id -> container; other parts
     const val = document.createElement('span'); val.style.cssText = 'opacity:.7';
     const btn = document.createElement('button'); btn.style.cssText = 'margin:0;padding:2px 8px';
     btn.addEventListener('click', () => { learnTarget = learnTarget === target ? null : target; renderMap(); });
-    row.append(name, val, btn);
+    const clr = document.createElement('button'); clr.textContent = '×'; clr.title = 'unassign'; clr.style.cssText = 'margin:0;padding:2px 6px';
+    clr.addEventListener('click', () => { midiMap[target] = []; if (learnTarget === target) learnTarget = null; saveMap(); renderMap(); });
+    row.append(name, val, btn, clr);
     mapRows.push({ target, val, btn, valueText });
     return row;
   }
@@ -690,10 +714,9 @@ const groupBody = {};                      // group id -> container; other parts
   const mapReset = document.createElement('button');
   mapReset.textContent = 'Default CCs';
   mapReset.style.cssText = 'margin:2px 0 6px';
-  mapReset.addEventListener('click', () => { midiMap.cutoff = 74; midiMap.bloom = [12, 13]; learnTarget = null; saveMap(); renderMap(); });
+  mapReset.addEventListener('click', () => { Object.assign(midiMap, defaultMap()); learnTarget = null; saveMap(); renderMap(); });
   groupBody.midi.append(lastMsg, statsEl,
-    mapRow('Cutoff CC (noise)', 'cutoff', () => 'CC ' + midiMap.cutoff),
-    mapRow('Bloom CC (glow)', 'bloom', () => 'CC ' + (midiMap.bloom.join(' / ') || '—')),
+    ...TARGETS.map(t => mapRow(t.label, t.id, () => midiMap[t.id].length ? 'CC ' + midiMap[t.id].join(' / ') : '—')),
     mapReset);
   renderMap();
 
@@ -718,6 +741,8 @@ const S = {
   beatFx: 0, barFx: 0, bandA: 0, tempoK: 1,           // MIDI clock pulses and tempo-scaled rotation
   calm: 0, lastMidi: performance.now(),   // idle calm (0 = alive, 1 = fully calm)
   bend: 0, bendT: 0,                       // pitch bend -1..1
+  mod: { sharp: 0.5, bright: 1, size: 0.5, spin: 0.5 },    // smoothed knob values 0..1 of the extra targets
+  modT: { sharp: 0.5, bright: 1, size: 0.5, spin: 0.5 },   // (start values leave the look unchanged)
   cutoff: 0.1, cutoffT: 0.1,     // CC74 normalised
   glow: 0.35, glowT: 0.35        // CC12/13 normalised
 };
@@ -774,8 +799,9 @@ function onNote(ch, note, vel) {
 }
 function onCC(ch, cc, val) {
   const v = val / 127;
-  if (cc === midiMap.cutoff) { S.cutoffT = v; flashStatus(`cc${cc} cutoff ${val}`); }
-  else if (midiMap.bloom.includes(cc)) { S.glowT = v; flashStatus(`cc${cc} glow ${val}`); }
+  for (const t of TARGETS) {
+    if (midiMap[t.id].includes(cc)) { t.set(v); flashStatus(`cc${cc} ${t.id} ${val}`); }
+  }
 }
 function onNoteOff(ch, note) {
   if (ch >= 3 && ch <= 5 && rings[ch - 3].note === note) rings[ch - 3].hold = 0;   // let the ring fade out
@@ -827,7 +853,8 @@ function handleMIDI(data, ts = performance.now()) {
   const type = st & 0xf0, ch = st & 0x0f;
   onLastMsg(describeMIDI(type, ch, data[1], data[2]) + (ch > 5 ? '  (ignored: only channels 1–6)' : ''));
   if (type === 0xb0 && learnTarget) {                   // CC learn: bind the knob that was just turned
-    if (learnTarget === 'cutoff') midiMap.cutoff = data[1]; else midiMap.bloom = [data[1]];
+    for (const t of TARGETS) midiMap[t.id] = midiMap[t.id].filter(c => c !== data[1]);   // one knob drives one thing
+    midiMap[learnTarget] = [data[1]];
     learnTarget = null; saveMap(); onMapChange();
     return;
   }
@@ -1178,6 +1205,8 @@ function frame() {
   S.calm += (calmT - S.calm) * (1 - Math.exp(-dt * (calmT ? 0.6 : 8)));   // slow fade out, fast wake-up
   S.bend += (S.bendT - S.bend) * ease;
   S.cutoff += (S.cutoffT - S.cutoff) * ease;
+  for (const k in S.mod) S.mod[k] += (S.modT[k] - S.mod[k]) * ease;
+  const sharpK = 0.4 + 1.2 * S.mod.sharp, brightK = 0.35 + 0.65 * S.mod.bright, sizeK = 0.5 + S.mod.size, spinK = 2 * S.mod.spin;   // each is 1 at the start value
   S.glow   += (S.glowT   - S.glow)   * ease;
 
   // CC74: 0 -> smooth sphere, 127 -> chaotic hedgehog
@@ -1189,8 +1218,9 @@ function frame() {
   grainPass.uniforms.uTime.value = shared.uTime.value;
   grainPass.uniforms.uGrain.value = cfg.grain;
   shared.uDensity.value = cfg.density * (0.25 + 0.75 * Q.q);
-  shared.uSize.value = cfg.size;
-  shared.uBright.value = cfg.bright;
+  shared.uSize.value = cfg.size * sizeK;
+  shared.uBright.value = cfg.bright * brightK;
+  shared.uSharp.value = sharpK;
 
   // CC12/13: bloom intensity
   bloom.strength = (cfg.glowBase + S.glow * cfg.glowRange + S.kick * 0.5 + S.beatFx * 0.3 + S.barFx * 0.5) * (1 - 0.5 * S.calm);
@@ -1215,7 +1245,7 @@ function frame() {
   shared.uBand.value.set(Math.PI * barPhase, S.bandA * (0.7 + 0.3 * Math.min(1, S.beatFx)), 0);   // a plane repeats every half turn: one sweep per bar
   const tempoT = alive ? THREE.MathUtils.clamp(CLK.bpm / 120, 0.5, 2) : 1;   // rotation follows the tempo
   S.tempoK += (tempoT - S.tempoK) * ease;
-  world.rotation.y += dt * (0.08 + S.cutoff * 0.12) * cfg.spin * (1 - 0.6 * S.calm) * S.tempoK;
+  world.rotation.y += dt * (0.08 + S.cutoff * 0.12) * cfg.spin * spinK * (1 - 0.6 * S.calm) * S.tempoK;
 
   // rings
   for (const r of rings) {
