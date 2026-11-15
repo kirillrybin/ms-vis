@@ -38,7 +38,7 @@ Press **H** to show or hide the panel in the top-right corner. It lets you adjus
 - number of hi-hat particles and the length of their trails;
 - bloom base level and range;
 - particle density, size and brightness;
-- film grain;
+- strength of the note ripple and film grain;
 - rotation speed.
 
 Values are saved in the browser's `localStorage`. The **Reset** button restores the defaults.
@@ -54,7 +54,7 @@ Channels 1–6 are used, which are the Model:Samples tracks by default.
 | 3 | Hi-Hat | Burst of small particles around the center |
 | 4–6 | Rings | Rotation and pulsing of thin wireframe rings, driven by the note number |
 
-Note On velocity is taken into account.
+Note On velocity is taken into account. Every note also sends a ripple across the core: a ring with a noise-broken crest that expands from the channel's own origin (kick at the bottom, snare at the top, hi-hat on the right, channels 4–6 on the left, front and back) and fades out. The note's pitch nudges the origin, so tracks look different even when they play the same note.
 
 | CC | Parameter | Effect |
 |----|-----------|--------|
@@ -67,6 +67,7 @@ CC messages are accepted from any of channels 1–6.
 
 - **Core:** 36,000 particles (`Points`) on a Fibonacci sphere plus a wireframe icosphere (`LineSegments`). Both are deformed in the vertex shader by 3D simplex noise.
 - **Hi-hats:** a pool of 900 particles whose motion is computed entirely in the vertex shader. The CPU only writes spawn data when a hat is hit.
+- **Ripples:** up to six waves (one per channel) are evaluated in the vertex shader, shaped by ridged simplex noise. A wave costs nothing while it is inactive.
 - **Trails:** every hi-hat particle is drawn as a head plus 4 fading samples, all computed in the shader from the same spawn data.
 - **Film grain:** a final full-screen pass adds subtle noise, strongest in the mid-tones, and leaves pure black clean.
 - **Auto quality:** if FPS stays below 45, particle density is lowered (and, as a last resort, the pixel ratio drops to 1); it recovers slowly when FPS is stable. The current FPS and quality level are shown in the settings panel title. It can be switched off with the "Auto quality" slider.

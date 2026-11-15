@@ -138,13 +138,29 @@ uniform float uTime;
 uniform float uAmp;   // 0..1  (CC74 -> amplitude)
 uniform float uFreq;  // noise frequency (CC74 -> frequency)
 uniform float uKick;  // kick envelope 0..1
+uniform vec3  uWaveDir[6]; // origin of the ripple of each MIDI channel
+uniform float uWaveAge[6]; // seconds since the hit
+uniform float uWaveAmt[6]; // strength (decays on the CPU), 0 = inactive
+// expanding ring whose crest is broken up by ridged 3D noise
+float waves(vec3 p){
+  vec3 n = normalize(p);
+  float w = 0.0;
+  for (int i = 0; i < 6; i++) {
+    if (uWaveAmt[i] < 0.01) continue;
+    float ang = acos(clamp(dot(n, uWaveDir[i]), -1.0, 1.0));
+    float band = exp(-pow((ang - uWaveAge[i] * 2.0) / 0.42, 2.0));
+    float ridge = 1.0 - abs(snoise(n * 3.2 + uWaveDir[i] * 5.0 + uTime * 0.4));
+    w += uWaveAmt[i] * band * (0.2 + ridge * ridge);
+  }
+  return w;
+}
 float disp(vec3 p){
   vec3 q = p*uFreq + vec3(0.0, uTime*0.35, uTime*0.2);
   float n  = snoise(q);
   float k2 = uAmp * uAmp;
   float n2 = k2 > 0.002 ? snoise(q*2.3 + 7.0) : 0.0;   // 2nd octave only when audible
   float spike = pow(max(n,0.0), 2.0) * uAmp * uAmp * 1.6;
-  return n*uAmp*0.45 + n2*uAmp*uAmp*0.25 + spike;
+  return n*uAmp*0.45 + n2*uAmp*uAmp*0.25 + spike + waves(p)*0.3;
 }
 vec3 displace(vec3 p, out float d){
   d = disp(p);
@@ -270,7 +286,10 @@ camera.position.set(0, 0, BASE_Z);
 
 const shared = {
   uTime: { value: 0 }, uAmp: { value: 0.12 }, uFreq: { value: 1.0 },
-  uKick: { value: 0 }, uDensity: { value: 1 }, uSize: { value: 1 }, uBright: { value: 1 }, uPx: { value: PR * innerHeight / 900 },
+  uKick: { value: 0 },
+  uWaveDir: { value: Array.from({ length: 6 }, () => new THREE.Vector3(0, 1, 0)) },
+  uWaveAge: { value: new Array(6).fill(0) }, uWaveAmt: { value: new Array(6).fill(0) },
+  uDensity: { value: 1 }, uSize: { value: 1 }, uBright: { value: 1 }, uPx: { value: PR * innerHeight / 900 },
   uOrange: { value: ORANGE }
 };
 
@@ -422,7 +441,7 @@ const DEFAULTS = {
   hatAmount: 1,
   glowBase: 0.25, glowRange: 2.2,
   density: 1, size: 1, bright: 1, spin: 1, auto: 1,
-  trail: 0.045, grain: 0.04
+  ripple: 1, trail: 0.045, grain: 0.04
 };
 const SPEC = [
   ['kickGain',  'Kick sensitivity', 0, 2, 0.01],
@@ -437,6 +456,7 @@ const SPEC = [
   ['density',   'Particle density', 0.05, 1, 0.01],
   ['size',      'Particle size', 0.3, 3, 0.05],
   ['bright',    'Brightness', 0.2, 2.5, 0.01],
+  ['ripple',    'Note ripple', 0, 2, 0.05],
   ['trail',     'Hi-hat trail', 0, 0.1, 0.005],
   ['grain',     'Film grain', 0, 0.2, 0.005],
   ['spin',      'Rotation speed', 0, 4, 0.05],
@@ -480,7 +500,7 @@ const sliderEls = {};
 }
 
 const S = {
-  kick: 0, snare: 0, invertUntil: 0,
+  kick: 0, snare: 0, wave: [0, 0, 0, 0, 0, 0], waveAge: [0, 0, 0, 0, 0, 0], invertUntil: 0,
   cutoff: 0.1, cutoffT: 0.1,     // CC74 normalised
   glow: 0.35, glowT: 0.35        // CC12/13 normalised
 };
@@ -492,8 +512,22 @@ function flashStatus(txt) {
   statusTimer = setTimeout(() => { statusEl.style.opacity = ''; }, 400);
 }
 
+// Each channel owns a ripple origin on the core (octahedron axes); the note nudges it
+const WAVE_ANCHOR = [
+  new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(1, 0, 0),
+  new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1)
+];
+const _tmp = new THREE.Vector3();
 function onNote(ch, note, vel) {
   const v = vel / 127;
+  {
+    const lon = (note % 12) / 12 * Math.PI * 2;
+    const lat = THREE.MathUtils.clamp((note - 48) / 48, -0.5, 0.5) * Math.PI * 0.9;
+    shared.uWaveDir.value[ch].copy(WAVE_ANCHOR[ch]).addScaledVector(
+      _tmp.set(Math.cos(lat) * Math.cos(lon), Math.sin(lat), Math.cos(lat) * Math.sin(lon)), 0.45).normalize();
+    S.waveAge[ch] = 0;
+    S.wave[ch] = (0.4 + v * 0.6) * cfg.ripple;
+  }
   if (ch === 0) {                       // Kick
     S.kick = Math.max(S.kick, (0.35 + v * 0.65) * cfg.kickGain);
     flashStatus(`ch1 kick ${vel}`);
@@ -792,6 +826,10 @@ function frame() {
   // envelopes
   S.kick  *= Math.exp(-dt * cfg.kickDecay);
   S.snare *= Math.exp(-dt * cfg.snareDecay);
+  for (let i = 0; i < 6; i++) {
+    S.waveAge[i] += dt; S.wave[i] *= Math.exp(-dt * 1.3);
+    shared.uWaveAge.value[i] = S.waveAge[i]; shared.uWaveAmt.value[i] = S.wave[i];
+  }
   const ease = 1 - Math.exp(-dt * 6);
   S.cutoff += (S.cutoffT - S.cutoff) * ease;
   S.glow   += (S.glowT   - S.glow)   * ease;
