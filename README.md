@@ -67,6 +67,12 @@ Note On velocity is taken into account. Every note also sends a ripple across th
 
 CC messages are accepted from any of channels 1–6.
 
+### Checking and remapping CCs
+
+Open the settings panel (**H**). The **MIDI** block shows the last message received, for example `ch2 CC 74 = 100`, including messages that are not mapped to anything and messages from channels above 6 (those are marked as ignored). If the knob you turn does not appear there, the visualizer is not receiving it at all: check the selected MIDI input and the MIDI settings of the device. Some Elektron devices can send parameter changes as NRPN instead of plain CC, which this visualizer does not read.
+
+If the knob appears with a different CC number than the defaults, press **Learn** next to *Cutoff CC* or *Bloom CC*, then turn the knob on the device. That CC is bound immediately and remembered. **Default CCs** restores 74 for the cutoff and 12 / 13 for the bloom. The mapping is stored separately from the presets, so loading a preset never changes it.
+
 ## Under the hood
 
 - **Core:** 36,000 particles (`Points`) on a Fibonacci sphere plus a wireframe icosphere (`LineSegments`). Both are deformed in the vertex shader by 3D simplex noise.

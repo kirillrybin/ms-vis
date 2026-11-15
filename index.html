@@ -486,6 +486,17 @@ const cfg = { ...DEFAULTS };
 try { Object.assign(cfg, JSON.parse(localStorage.getItem(STORE_KEY) || '{}')); } catch (_) {}
 function saveCfg() { try { localStorage.setItem(STORE_KEY, JSON.stringify(cfg)); } catch (_) {} }
 
+// MIDI CC mapping lives apart from the look settings, so presets never change it
+const MAP_KEY = 'ms-vis-midimap-v1';
+const midiMap = { cutoff: 74, bloom: [12, 13] };
+try {
+  const m = JSON.parse(localStorage.getItem(MAP_KEY) || 'null');
+  if (m && Number.isInteger(m.cutoff) && Array.isArray(m.bloom)) { midiMap.cutoff = m.cutoff; midiMap.bloom = m.bloom.filter(Number.isInteger); }
+} catch (_) {}
+function saveMap() { try { localStorage.setItem(MAP_KEY, JSON.stringify(midiMap)); } catch (_) {} }
+let learnTarget = null;                 // 'cutoff' | 'bloom' | null
+let onMapChange = () => {}, onLastMsg = () => {};
+
 const panel = document.getElementById('panel');
 const sliderEls = {};
 {
@@ -538,6 +549,43 @@ const sliderEls = {};
     for (const k in sliderEls) { sliderEls[k][0].value = cfg[k]; sliderEls[k][1](); }
     setAccent(cfg.accent);
   }
+
+  // MIDI monitor + CC learn
+  const midiHead = document.createElement('div');
+  midiHead.style.cssText = 'opacity:.6;margin:10px 0 4px';
+  midiHead.textContent = 'MIDI';
+  const lastMsg = document.createElement('div');
+  lastMsg.style.cssText = 'opacity:.75;margin-bottom:6px;min-height:1.4em;word-break:break-all';
+  lastMsg.textContent = 'last message: none yet';
+  onLastMsg = (text) => { lastMsg.textContent = 'last message: ' + text; };
+  const mapRows = [];
+  function mapRow(label, target, valueText) {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:5px';
+    const name = document.createElement('span'); name.style.cssText = 'flex:1;opacity:.85'; name.textContent = label;
+    const val = document.createElement('span'); val.style.cssText = 'opacity:.7';
+    const btn = document.createElement('button'); btn.style.cssText = 'margin:0;padding:2px 8px';
+    btn.addEventListener('click', () => { learnTarget = learnTarget === target ? null : target; renderMap(); });
+    row.append(name, val, btn);
+    mapRows.push({ target, val, btn, valueText });
+    return row;
+  }
+  function renderMap() {
+    for (const r of mapRows) {
+      r.val.textContent = r.valueText();
+      r.btn.textContent = learnTarget === r.target ? 'turn a knob…' : 'Learn';
+    }
+  }
+  onMapChange = renderMap;
+  const mapReset = document.createElement('button');
+  mapReset.textContent = 'Default CCs';
+  mapReset.style.cssText = 'margin:2px 0 10px';
+  mapReset.addEventListener('click', () => { midiMap.cutoff = 74; midiMap.bloom = [12, 13]; learnTarget = null; saveMap(); renderMap(); });
+  panel.append(midiHead, lastMsg,
+    mapRow('Cutoff CC (noise)', 'cutoff', () => 'CC ' + midiMap.cutoff),
+    mapRow('Bloom CC (glow)', 'bloom', () => 'CC ' + (midiMap.bloom.join(' / ') || '—')),
+    mapReset);
+  renderMap();
 
   // Presets: 5 slots, key 1-5 (or click) loads, Shift+1-5 (or Shift+click) saves
   const PRESET_KEY = 'ms-vis-presets-v1';
@@ -645,14 +693,30 @@ function onNote(ch, note, vel) {
 }
 function onCC(ch, cc, val) {
   const v = val / 127;
-  if (cc === 74) { S.cutoffT = v; flashStatus(`cc74 cutoff ${val}`); }
-  else if (cc === 12 || cc === 13) { S.glowT = v; flashStatus(`cc${cc} glow ${val}`); }
+  if (cc === midiMap.cutoff) { S.cutoffT = v; flashStatus(`cc${cc} cutoff ${val}`); }
+  else if (midiMap.bloom.includes(cc)) { S.glowT = v; flashStatus(`cc${cc} glow ${val}`); }
 }
 function onNoteOff(ch, note) {
   if (ch >= 3 && ch <= 5 && rings[ch - 3].note === note) rings[ch - 3].hold = 0;   // let the ring fade out
 }
+function describeMIDI(type, ch, d1, d2) {
+  const c = `ch${ch + 1} `;
+  if (type === 0x90) return c + (d2 ? `note ${d1} vel ${d2}` : `note ${d1} off`);
+  if (type === 0x80) return c + `note ${d1} off`;
+  if (type === 0xb0) return c + `CC ${d1} = ${d2}`;
+  if (type === 0xe0) return c + `pitch bend ${((d2 << 7) | d1) - 8192}`;
+  return c + `0x${type.toString(16)} ${d1} ${d2}`;
+}
 function handleMIDI(data) {
-  const st = data[0], type = st & 0xf0, ch = st & 0x0f;
+  const st = data[0];
+  if (st >= 0xf0) return;                               // clock, active sensing, sysex...
+  const type = st & 0xf0, ch = st & 0x0f;
+  onLastMsg(describeMIDI(type, ch, data[1], data[2]) + (ch > 5 ? '  (ignored: only channels 1–6)' : ''));
+  if (type === 0xb0 && learnTarget) {                   // CC learn: bind the knob that was just turned
+    if (learnTarget === 'cutoff') midiMap.cutoff = data[1]; else midiMap.bloom = [data[1]];
+    learnTarget = null; saveMap(); onMapChange();
+    return;
+  }
   if (ch > 5) return;                                   // channels 1–6 only
   S.lastMidi = performance.now();
   if (type === 0x90 && data[2] > 0) onNote(ch, data[1], data[2]);
