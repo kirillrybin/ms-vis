@@ -35,13 +35,19 @@ The cursor disappears after 2 seconds without mouse movement. While recording, a
 Press **H** to show or hide the panel in the top-right corner. The five preset slots are always at the top; everything else is in collapsible groups (the open or closed state of each group is remembered):
 
 - **Reaction:** kick and snare sensitivity and decay speed, camera zoom on kick, maximum RGB shift on snare, number of hi-hat particles, strength of the note ripple;
-- **Look:** bloom base level and range, particle density, size and brightness, hi-hat trails, film grain, rotation speed, and the accent color (a color picker plus six swatches that recolor the rare particles, ripple rings, hi-hat sparks, rings, scanner band and the UI);
+- **Look:** the core shape (see below), bloom base level and range, particle density, size and brightness, hi-hat trails, film grain, rotation speed, and the accent color (a color picker plus six swatches that recolor the rare particles, ripple rings, hi-hat sparks, rings, scanner band and the UI);
 - **MIDI & clock:** strength of the clock beat pulse and scanner band, the last MIDI message, connection diagnostics and CC learn;
 - **Performance:** idle calm (after the chosen number of seconds without MIDI the scene gently calms down: smoother shape, softer glow, slower rotation; it wakes up instantly on the next message) and auto quality;
 - **Test beat:** the groove played by Test Beat;
 - **Recording:** the audio input used for video recording.
 
 Values are saved in the browser's `localStorage`. **Reset all settings** at the bottom restores the defaults. To use a preset slot, click it (or press **1–5**) to load it, Shift+click (or **Shift+1–5**) to save the current settings into it.
+
+## Shapes
+
+The core can take five shapes: **Sphere**, **Torus**, **Cube**, **Knot** and **Disc**. Pick one in the *Look* group of the settings panel. Every shape is a cloud of particles plus a wireframe, and all of them go through the same noise deformation and react to the same notes, CCs and clock. When you change the shape, the core collapses, swaps at the smallest size and blooms back (half a second).
+
+The shape is part of a preset, like the colors and the sliders. So a Program Change from the synth, a preset key (**1–5**) or a click on a preset slot changes the whole form of the visuals, not only the tint: save a different shape into each slot and the look follows the pattern you play.
 
 ## MIDI mapping
 
@@ -108,7 +114,7 @@ If the knob appears with a different CC number than the defaults, press **Learn*
 
 ## Under the hood
 
-- **Core:** 36,000 particles (`Points`) on a Fibonacci sphere plus a wireframe icosphere (`LineSegments`). Both are deformed in the vertex shader by 3D simplex noise.
+- **Core:** 36,000 particles (`Points`) plus a wireframe (`LineSegments`) for each of the five shapes. The sphere uses a Fibonacci distribution and an icosphere, the other shapes sample random points on the surface of a Three.js geometry. Only the selected shape is drawn. All of them are deformed in the vertex shader by 3D simplex noise.
 - **Hi-hats:** a pool of 900 particles whose motion is computed entirely in the vertex shader. The CPU only writes spawn data when a hat is hit.
 - **Ripples:** up to six rings (one per channel) are evaluated in the vertex shader. They show mostly as light and color, not as geometry. A ring costs nothing while it is inactive.
 - **Trails:** every hi-hat particle is drawn as a head plus 4 fading samples, all computed in the shader from the same spawn data.

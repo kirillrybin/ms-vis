@@ -157,6 +157,7 @@ uniform float uAmp;   // 0..1  (CC74 -> amplitude)
 uniform float uFreq;  // noise frequency (CC74 -> frequency)
 uniform float uKick;  // kick envelope 0..1
 uniform float uBeat;  // beat pulse from MIDI clock 0..1
+uniform float uShrink; // 0..1, the core collapses while it changes shape
 uniform float uSharp; // sharpness of the shape (MIDI-controlled), 1 = neutral
 uniform vec3  uBand;  // MIDI clock scanner: x = angle (rad), y = strength
 uniform vec3  uWaveDir[6]; // origin of the ripple of each MIDI channel
@@ -196,7 +197,7 @@ float disp(vec3 p){
 vec3 displace(vec3 p, out float d, out float wv){
   wv = waves(p);
   d = disp(p) + wv * 0.08;                  // the ring barely moves the shape
-  return p * (1.0 + uKick*0.32 + uBeat*0.09 + d);
+  return p * (1.0 + uKick*0.32 + uBeat*0.09 + d) * (1.0 - uShrink);
 }`;
 
 const ORANGE = new THREE.Color(0xff5500);
@@ -324,7 +325,7 @@ camera.position.set(0, 0, BASE_Z);
 
 const shared = {
   uTime: { value: 0 }, uAmp: { value: 0.12 }, uFreq: { value: 1.0 },
-  uKick: { value: 0 }, uBeat: { value: 0 }, uSharp: { value: 1 }, uBand: { value: new THREE.Vector3() },
+  uKick: { value: 0 }, uBeat: { value: 0 }, uShrink: { value: 0 }, uSharp: { value: 1 }, uBand: { value: new THREE.Vector3() },
   uWaveDir: { value: Array.from({ length: 6 }, () => new THREE.Vector3(0, 1, 0)) },
   uWaveAge: { value: new Array(6).fill(0) }, uWaveAmt: { value: new Array(6).fill(0) },
   uDensity: { value: 1 }, uSize: { value: 1 }, uBright: { value: 1 }, uPx: { value: PR * innerHeight / 900 },
@@ -334,36 +335,88 @@ const shared = {
 const world = new THREE.Group();
 scene.add(world);
 
-// --- Core particles (fibonacci sphere) ---
+// --- Core shapes: every shape is a cloud of particles plus a wireframe, all deformed by the same shader ---
 const N = 36000;
-{
-  const pos = new Float32Array(N * 3), rnd = new Float32Array(N);
-  const ga = Math.PI * (3 - Math.sqrt(5));
-  for (let i = 0; i < N; i++) {
-    const y = 1 - (i / (N - 1)) * 2, r = Math.sqrt(1 - y * y), t = ga * i;
-    pos[i*3] = Math.cos(t) * r; pos[i*3+1] = y; pos[i*3+2] = Math.sin(t) * r;
-    rnd[i] = Math.random();
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  g.setAttribute('aRand', new THREE.BufferAttribute(rnd, 1));
-  const m = new THREE.ShaderMaterial({
-    vertexShader: coreVert, fragmentShader: coreFrag, uniforms: shared,
-    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
-  });
-  world.add(new THREE.Points(g, m));
+const SHAPES = {
+  sphere: null,                                                    // fibonacci sphere + icosphere, built below
+  torus:  () => new THREE.TorusGeometry(0.72, 0.3, 24, 64),
+  cube:   () => new THREE.BoxGeometry(1.4, 1.4, 1.4, 8, 8, 8),
+  knot:   () => new THREE.TorusKnotGeometry(0.62, 0.17, 160, 14, 2, 3),
+  disc:   () => new THREE.CylinderGeometry(1.15, 1.15, 0.2, 56, 4).rotateX(0.75)   // tilted, so it does not turn edge-on
+};
+const SHAPE_LABELS = [['sphere', 'Sphere'], ['torus', 'Torus'], ['cube', 'Cube'], ['knot', 'Knot'], ['disc', 'Disc']];
+const coreMat = new THREE.ShaderMaterial({
+  vertexShader: coreVert, fragmentShader: coreFrag, uniforms: shared,
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+});
+const wireMat = new THREE.ShaderMaterial({
+  vertexShader: wireVert, fragmentShader: wireFrag, uniforms: shared,
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+});
+function mulberry32(a) {                     // small seeded RNG: the same shape always gets the same particles
+  return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
 }
-
-// --- Wireframe shell ---
-{
-  const ico = new THREE.IcosahedronGeometry(1, 5);
-  const wg = new THREE.WireframeGeometry(ico);
-  const m = new THREE.ShaderMaterial({
-    vertexShader: wireVert, fragmentShader: wireFrag, uniforms: shared,
-    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
-  });
-  world.add(new THREE.LineSegments(wg, m));
-  ico.dispose();
+function sampleSurface(geo, count, rng) {    // uniform random points on the surface of any triangle mesh
+  const g = geo.index ? geo.toNonIndexed() : geo;
+  const pos = g.attributes.position, tri = pos.count / 3;
+  const cum = new Float64Array(tri);
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), ab = new THREE.Vector3(), ac = new THREE.Vector3();
+  let total = 0;
+  for (let i = 0; i < tri; i++) {
+    a.fromBufferAttribute(pos, i * 3); b.fromBufferAttribute(pos, i * 3 + 1); c.fromBufferAttribute(pos, i * 3 + 2);
+    total += ab.subVectors(b, a).cross(ac.subVectors(c, a)).length() * 0.5;
+    cum[i] = total;
+  }
+  const out = new Float32Array(count * 3);
+  for (let n = 0; n < count; n++) {
+    const r = rng() * total;
+    let lo = 0, hi = tri - 1;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (cum[mid] < r) lo = mid + 1; else hi = mid; }
+    a.fromBufferAttribute(pos, lo * 3); b.fromBufferAttribute(pos, lo * 3 + 1); c.fromBufferAttribute(pos, lo * 3 + 2);
+    let u = rng(), v = rng();
+    if (u + v > 1) { u = 1 - u; v = 1 - v; }
+    out[n * 3]     = a.x + (b.x - a.x) * u + (c.x - a.x) * v;
+    out[n * 3 + 1] = a.y + (b.y - a.y) * u + (c.y - a.y) * v;
+    out[n * 3 + 2] = a.z + (b.z - a.z) * u + (c.z - a.z) * v;
+  }
+  return out;
+}
+const shapeGroups = {};
+for (const id of Object.keys(SHAPES)) {
+  const rng = mulberry32(1234 + id.length * 97);
+  let pts, wireGeo, tmp = null;
+  if (id === 'sphere') {
+    pts = new Float32Array(N * 3);
+    const ga = Math.PI * (3 - Math.sqrt(5));
+    for (let i = 0; i < N; i++) {
+      const y = 1 - (i / (N - 1)) * 2, r = Math.sqrt(1 - y * y), t = ga * i;
+      pts[i*3] = Math.cos(t) * r; pts[i*3+1] = y; pts[i*3+2] = Math.sin(t) * r;
+    }
+    tmp = new THREE.IcosahedronGeometry(1, 5);
+  } else {
+    tmp = SHAPES[id]();
+    pts = sampleSurface(tmp, N, rng);
+  }
+  wireGeo = new THREE.WireframeGeometry(tmp);
+  tmp.dispose();
+  const rnd = new Float32Array(N);
+  for (let i = 0; i < N; i++) rnd[i] = rng();
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pts, 3));
+  g.setAttribute('aRand', new THREE.BufferAttribute(rnd, 1));
+  const grp = new THREE.Group();
+  grp.add(new THREE.Points(g, coreMat), new THREE.LineSegments(wireGeo, wireMat));
+  grp.visible = false;
+  world.add(grp);
+  shapeGroups[id] = grp;
+}
+// switching shape: the core collapses, swaps at the smallest size and blooms back
+const shapeState = { cur: 'sphere', pending: null, t: 0 };
+const SHAPE_TIME = 0.5;
+function showShape(id) { for (const k in shapeGroups) shapeGroups[k].visible = k === id; shapeState.cur = id; }
+function setShape(id) {
+  if (!shapeGroups[id] || (id === shapeState.cur && !shapeState.pending)) return;
+  shapeState.pending = id; shapeState.t = 0;
 }
 
 // --- Hi-hat particle pool (simulated in the vertex shader, with trails) ---
@@ -480,7 +533,7 @@ const DEFAULTS = {
   glowBase: 0.25, glowRange: 2.2,
   density: 1, size: 1, bright: 1, spin: 1, auto: 1,
   ripple: 1, trail: 0.045, grain: 0.04,
-  accent: '#ff5500', idle: 8, clockFx: 1, groove: 'house'
+  accent: '#ff5500', idle: 8, clockFx: 1, groove: 'house', shape: 'sphere'
 };
 // panel groups: [id, title, open by default]
 const GROUPS = [
@@ -521,6 +574,8 @@ const STORE_KEY = 'ms-vis-settings-v1';
 const cfg = { ...DEFAULTS };
 try { Object.assign(cfg, JSON.parse(localStorage.getItem(STORE_KEY) || '{}')); } catch (_) {}
 function saveCfg() { try { localStorage.setItem(STORE_KEY, JSON.stringify(cfg)); } catch (_) {} }
+if (!shapeGroups[cfg.shape]) cfg.shape = 'sphere';
+showShape(cfg.shape);                                  // the saved shape appears at once, without the transition
 
 // MIDI CC mapping lives apart from the look settings, so presets never change it.
 // Every target can be bound to any CC with Learn. `v` is the 0..1 value of the knob.
@@ -677,7 +732,16 @@ const groupBody = {};                      // group id -> container; other parts
     swatches.appendChild(b);
   }
   accInput.addEventListener('input', () => setAccent(accInput.value));
-  groupBody.look.append(accRow, swatches);
+  const shapeLabel = document.createElement('div');
+  shapeLabel.style.cssText = 'opacity:.85;margin:6px 0 4px';
+  shapeLabel.textContent = 'Shape (saved in presets)';
+  const shapeSel = document.createElement('select');
+  for (const [id, label] of SHAPE_LABELS) {
+    const o = document.createElement('option'); o.value = id; o.textContent = label; shapeSel.appendChild(o);
+  }
+  shapeSel.value = cfg.shape;
+  shapeSel.addEventListener('change', () => { cfg.shape = shapeSel.value; saveCfg(); setShape(cfg.shape); });
+  groupBody.look.append(shapeLabel, shapeSel, accRow, swatches);
   setAccent(cfg.accent);
 
   // Test beat groove
@@ -696,6 +760,7 @@ const groupBody = {};                      // group id -> container; other parts
     for (const k in sliderEls) { sliderEls[k][0].value = cfg[k]; sliderEls[k][1](); }
     setAccent(cfg.accent);
     if (grooveSel.value !== cfg.groove) { grooveSel.value = cfg.groove; restartTest(); }
+    shapeSel.value = cfg.shape; setShape(cfg.shape);
   }
 
   // MIDI monitor + CC learn
@@ -1302,6 +1367,15 @@ function frame() {
   shared.uAmp.value  = (S.cutoff * S.cutoff * 0.95 + (S.cutoff > 0.001 ? 0.01 : 0)) * (1 - 0.8 * S.calm);
   shared.uFreq.value = 0.7 + S.cutoff * 3.3;
   shared.uKick.value = S.kick;
+  let shrink = 0;                                          // shape transition: collapse, swap at the smallest size, bloom back
+  if (shapeState.pending) {
+    shapeState.t += dt;
+    const k = Math.min(1, shapeState.t / SHAPE_TIME);
+    shrink = Math.sin(k * Math.PI) * 0.75;
+    if (k >= 0.5 && shapeState.cur !== shapeState.pending) showShape(shapeState.pending);
+    if (k >= 1) shapeState.pending = null;
+  }
+  shared.uShrink.value = shrink;
   shared.uBeat.value = Math.min(1, (S.beatFx * 0.5 + S.barFx * 0.5));
   hatPoints.material.uniforms.uTrail.value = cfg.trail;
   grainPass.uniforms.uTime.value = shared.uTime.value;
