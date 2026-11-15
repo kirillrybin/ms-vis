@@ -788,7 +788,7 @@ const CLK = { tick: 0, bar: 0, running: null, times: [], bpm: 0, lastTick: 0 }; 
 const clockAlive = (now) => CLK.running !== false && CLK.bpm > 0 && now - CLK.lastTick < 400;   // connection diagnostics shown in the panel
 // MIDI options, stored apart from the look settings so that loading a preset never changes them
 const OPTS_KEY = 'ms-vis-midiopts-v1';
-const midiOpts = { pc: true };                       // Program Change selects a preset
+const midiOpts = { pc: true, blend: 0.6 };           // Program Change selects a preset; blend = seconds a preset change takes (0 = instant)
 try { Object.assign(midiOpts, JSON.parse(localStorage.getItem(OPTS_KEY) || '{}')); } catch (_) {}
 function saveOpts() { try { localStorage.setItem(OPTS_KEY, JSON.stringify(midiOpts)); } catch (_) {} }
 // Program Change map: program number (0-127) -> preset slot (1-5). Empty = the old "repeat every 5" mode.
@@ -816,7 +816,7 @@ try {
   if (Array.isArray(r)) r.slice(0, 6).forEach((v, i) => { if (ROLES.some(x => x[0] === v)) roles[i] = v; });
 } catch (_) {}
 function saveRoles() { try { localStorage.setItem(ROLES_KEY, JSON.stringify(roles)); } catch (_) {} }
-let onMapChange = () => {}, onLastMsg = () => {}, applyPreset = () => {};
+let onMapChange = () => {}, onLastMsg = () => {}, applyPreset = () => {}, presetTick = () => {};
 
 const panel = document.getElementById('panel');
 const sliderEls = {};
@@ -835,10 +835,37 @@ const groupBody = {};                      // group id -> container; other parts
   slots.className = 'slots';
   const slotBtns = [];
   function markSlots() { slotBtns.forEach((b, i) => b.classList.toggle('filled', !!presets[i + 1])); }
+  // A preset change glides: the numbers move to the new values over `secs`, the discrete things (shape, groove, accent step) switch at once
+  let tween = null;
+  const TWEEN_SKIP = new Set(['auto', 'idle', ...Object.keys(SHAPE_PARAM_DEFAULTS)]);
+  function applyLook(target, secs) {
+    const to = { ...DEFAULTS, ...target };
+    tween = null;
+    if (!(secs > 0)) { Object.assign(cfg, to); saveCfg(); refreshPanel(); return; }
+    const keys = [], from = {};
+    for (const [key] of SPEC) if (!TWEEN_SKIP.has(key) && to[key] !== cfg[key]) { keys.push(key); from[key] = cfg[key]; }
+    const accFrom = cfg.accent, hold = { ...to };
+    for (const k of keys) hold[k] = cfg[k];
+    hold.accent = cfg.accent;
+    Object.assign(cfg, hold); saveCfg(); refreshPanel();
+    tween = { keys, from, to, accFrom, t: 0, dur: secs };
+  }
+  presetTick = (dt) => {
+    if (!tween) return;
+    const tw = tween;
+    tw.t += dt;
+    const k = Math.min(1, tw.t / tw.dur), e = k * k * (3 - 2 * k);
+    for (const key of tw.keys) { cfg[key] = tw.from[key] + (tw.to[key] - tw.from[key]) * e; sliderEls[key][0].value = cfg[key]; sliderEls[key][1](); }
+    if (tw.accFrom !== tw.to.accent) {
+      const hex = k >= 1 ? tw.to.accent : '#' + new THREE.Color(tw.accFrom).lerp(new THREE.Color(tw.to.accent), e).getHexString();
+      cfg.accent = hex; accInput.value = hex; ORANGE.set(hex); document.documentElement.style.setProperty('--accent', hex);
+    }
+    if (k >= 1) { tween = null; saveCfg(); }
+  };
   function loadPreset(n) {
     const pr = presets[n];
     if (!pr) { flashStatus(`preset ${n} empty, Shift+${n} saves`); return; }
-    Object.assign(cfg, DEFAULTS, pr); saveCfg(); refreshPanel();
+    applyLook(pr, midiOpts.blend);
     flashStatus(`preset ${n} loaded`);
   }
   function savePreset(n) {
@@ -849,7 +876,7 @@ const groupBody = {};                      // group id -> container; other parts
   applyPreset = (n, why) => {                       // used by MIDI Program Change
     const pr = presets[n];
     if (!pr) { flashStatus(`${why}: preset ${n} is empty`); return; }
-    Object.assign(cfg, DEFAULTS, pr); saveCfg(); refreshPanel();
+    applyLook(pr, midiOpts.blend);
     flashStatus(`${why} → preset ${n}`);
   };
   for (let n = 1; n <= 5; n++) {
@@ -895,6 +922,7 @@ const groupBody = {};                      // group id -> container; other parts
     inp.value = cfg[key]; show();
     inp.addEventListener('input', () => {
       cfg[key] = +inp.value; show(); saveCfg();
+      if (tween) tween.keys = tween.keys.filter(k => k !== key);          // the hand wins over a running preset glide
       if (shapeId) { clearTimeout(shapeSyncTimer); shapeSyncTimer = setTimeout(() => syncShapeParams(cfg), 150); }
     });
     l.append(t, v, inp);
@@ -909,6 +937,16 @@ const groupBody = {};                      // group id -> container; other parts
   showOffline(window.__msOffline);
   addEventListener('ms-offline', (e) => showOffline(e.detail));
   groupBody.perf.appendChild(offlineEl);
+  const blendL = document.createElement('label');
+  const blendT = document.createElement('span'); blendT.textContent = 'Preset blend, s (0=instant)';
+  const blendV = document.createElement('span'); blendV.className = 'v';
+  const blendI = document.createElement('input');
+  blendI.type = 'range'; blendI.min = 0; blendI.max = 3; blendI.step = 0.1; blendI.value = midiOpts.blend;
+  const showBlend = () => { blendV.textContent = (+midiOpts.blend).toFixed(1); };
+  showBlend();
+  blendI.addEventListener('input', () => { midiOpts.blend = +blendI.value; showBlend(); saveOpts(); });
+  blendL.append(blendT, blendV, blendI);
+  groupBody.perf.insertBefore(blendL, offlineEl);
 
   // Accent colour: one THREE.Color shared by every shader, ring and the UI
   const accRow = document.createElement('div');
@@ -1161,7 +1199,7 @@ const groupBody = {};                      // group id -> container; other parts
       settings: cleanLook(cfg),
       presets: Object.fromEntries(Object.entries(presets).map(([k, v]) => [k, cleanLook(v)])),
       midiMap: Object.fromEntries(TARGETS.map(t => [t.id, [...midiMap[t.id]]])),
-      midiOptions: { pc: !!midiOpts.pc },
+      midiOptions: { pc: !!midiOpts.pc, blend: midiOpts.blend },
       programMap: { ...programMap },
       roles: [...roles]
     };
@@ -1192,6 +1230,9 @@ const groupBody = {};                      // group id -> container; other parts
     }
     if (d.midiOptions && typeof d.midiOptions.pc === 'boolean') {
       midiOpts.pc = d.midiOptions.pc; pcBox.checked = midiOpts.pc; saveOpts(); done.push('Program Change option');
+    }
+    if (d.midiOptions && typeof d.midiOptions.blend === 'number' && isFinite(d.midiOptions.blend)) {
+      midiOpts.blend = clampNum(d.midiOptions.blend, 0, 3); blendI.value = midiOpts.blend; showBlend(); saveOpts(); done.push('preset blend');
     }
     if (d.programMap && typeof d.programMap === 'object') {
       programMap = cleanProgMap(d.programMap); learnSlot = 0; saveProgMap(); renderProg(); done.push('Program Change map');
@@ -1743,6 +1784,7 @@ function frame() {
   updateQuality(raw);
   const now = performance.now();
   shared.uTime.value += dt;
+  presetTick(dt);
 
   // envelopes
   S.kick  *= Math.exp(-dt * cfg.kickDecay);

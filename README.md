@@ -39,10 +39,12 @@ Press **H** to show or hide the panel in the top-right corner. The five preset s
 - **Reaction:** kick and snare sensitivity and decay speed, camera zoom on kick, maximum RGB shift on snare, number of hi-hat particles, strength of the note ripple;
 - **Look:** the core shape (see below), bloom base level and range, particle density, size and brightness, hi-hat trails, film grain, rotation speed, and the accent color (a color picker plus six swatches that recolor the rare particles, ripple rings, hi-hat sparks, rings, scanner band and the UI);
 - **MIDI & clock:** strength of the clock beat pulse and scanner band, the last MIDI message, connection diagnostics and CC learn;
-- **Performance:** idle calm (after the chosen number of seconds without MIDI the scene gently calms down: smoother shape, softer glow, slower rotation; it wakes up instantly on the next message) and auto quality;
+- **Performance:** idle calm (after the chosen number of seconds without MIDI the scene gently calms down: smoother shape, softer glow, slower rotation; it wakes up instantly on the next message) auto quality, and **Preset blend**: how many seconds a preset change takes (0.6 s by default, 0 = instant);
 - **Test beat:** the groove played by Test Beat;
 - **Recording:** the audio input used for video recording;
 - **Backup:** export and import of your whole setup (see below).
+
+When you load a preset (keys **1–5**, a click on a slot or a Program Change from the synth) the sliders and the accent color glide to the new values over the blend time instead of jumping; the shape, groove and shape parameters switch at once (the shape has its own half-second transition). Moving a slider by hand while the glide runs takes that slider out of it. The blend time is stored apart from the presets and is part of the settings export.
 
 Values are saved in the browser's `localStorage`. **Reset all settings** at the bottom restores the defaults. To use a preset slot, click it (or press **1–5**) to load it, Shift+click (or **Shift+1–5**) to save the current settings into it.
 
