@@ -39,6 +39,7 @@ Press **H** to show or hide the panel in the top-right corner. It lets you adjus
 - bloom base level and range;
 - particle density, size and brightness;
 - strength of the note ripple and film grain;
+- accent color: a color picker plus six presets. It recolors the rare particles, ripple crests, hi-hat sparks, rings and the UI;
 - rotation speed.
 
 Values are saved in the browser's `localStorage`. The **Reset** button restores the defaults.
