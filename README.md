@@ -27,6 +27,8 @@ No synth at hand? Press the hidden **Test Beat** button in the bottom-right corn
 | **T** | Toggle Test Beat when the button is hidden |
 | **1–5** | Load a settings preset |
 | **Shift + 1–5** | Save the current settings (including the accent color) into that slot |
+| **H** | Show / hide the settings panel |
+| **?** | Show this list of keys in the app (**Esc** or a click outside closes it; not available in fullscreen) |
 
 The cursor disappears after 2 seconds without mouse movement. While recording, a small orange dot blinks at the top center. Audio is included in the recording if you pick an audio input in the settings panel (**H**, *Recording* group). The Model:Samples shows up there as a USB audio device. Choose the input before you start recording; Chrome will ask for microphone permission. By default the recording is silent.
 

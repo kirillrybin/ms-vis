@@ -67,7 +67,17 @@
   #panel details.grp[open] > summary::before { content: '▾ '; }
   #panel .hint { opacity: .35; margin-top: 8px; }
   body.idle, body.idle * { cursor: none !important; }
-  body.clean #midi-box, body.clean #status, body.clean #test-beat, body.clean #panel { display: none !important; }
+  body.clean #midi-box, body.clean #status, body.clean #test-beat, body.clean #panel, body.clean #help { display: none !important; }
+  #help { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.6); }
+  #help.open { display: flex; }
+  #help .card { box-sizing: border-box; width: min(420px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 14px 16px;
+    background: rgba(12,12,12,.92); border: 1px solid rgba(255,255,255,.15); backdrop-filter: blur(8px); }
+  #help h4 { margin: 0 0 10px; font-weight: 400; letter-spacing: .08em; text-transform: uppercase; opacity: .7; }
+  #help .row { display: flex; gap: 12px; padding: 3px 0; border-top: 1px solid rgba(255,255,255,.07); }
+  #help .row b { flex: 0 0 96px; font-weight: 400; color: var(--accent); }
+  #help .row span { flex: 1; opacity: .85; }
+  #help .foot { opacity: .4; margin-top: 10px; }
+  #panel .hint a { color: var(--accent); cursor: pointer; opacity: 1; }
   #rec { position: absolute; top: 14px; left: 50%; width: 8px; height: 8px; margin-left: -4px; border-radius: 50%;
          background: var(--accent); display: none; animation: blink 1s steps(2, start) infinite; }
   #rec.on { display: block; }
@@ -79,6 +89,18 @@
   <div id="midi-box"><select id="midi-select"><option value="">MIDI: initialising…</option></select></div>
   <div id="rec"></div>
   <div id="panel"></div>
+  <div id="help"><div class="card">
+    <h4>Keyboard shortcuts</h4>
+    <div class="row"><b>H</b><span>show / hide the settings panel</span></div>
+    <div class="row"><b>F</b><span>fullscreen projector mode (hides all controls)</span></div>
+    <div class="row"><b>R</b><span>start / stop recording (.webm)</span></div>
+    <div class="row"><b>T</b><span>start / stop the Test Beat groove</span></div>
+    <div class="row"><b>1 – 5</b><span>load preset slot</span></div>
+    <div class="row"><b>Shift + 1 – 5</b><span>save the current look into a slot</span></div>
+    <div class="row"><b>?</b><span>this help</span></div>
+    <div class="row"><b>Esc</b><span>close this help</span></div>
+    <div class="foot">Click outside the window to close it.</div>
+  </div></div>
   <div id="status">no signal</div>
   <button id="test-beat">Test Beat</button>
 </div>
@@ -1170,7 +1192,10 @@ const groupBody = {};                      // group id -> container; other parts
   reset.addEventListener('click', () => { Object.assign(cfg, DEFAULTS); saveCfg(); refreshPanel(); });
   panel.appendChild(reset);
   const hint = document.createElement('div');
-  hint.className = 'hint'; hint.textContent = 'H panel · F fullscreen · R record · T test beat · 1–5 presets (Shift saves)';
+  hint.className = 'hint'; hint.textContent = 'H panel · F fullscreen · R record · T test beat · 1–5 presets (Shift saves) · ';
+  const helpLink = document.createElement('a'); helpLink.textContent = '? all keys';
+  helpLink.addEventListener('click', () => helpEl.classList.add('open'));
+  hint.appendChild(helpLink);
   panel.appendChild(hint);
   addEventListener('keydown', (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -1191,6 +1216,8 @@ const S = {
   glow: 0.35, glowT: 0.35        // CC12/13 normalised
 };
 const statusEl = document.getElementById('status');
+const helpEl = document.getElementById('help');
+helpEl.addEventListener('click', (e) => { if (e.target === helpEl) helpEl.classList.remove('open'); });
 let statusTimer = 0;
 function flashStatus(txt) {
   statusEl.textContent = txt; statusEl.style.opacity = '.7';
@@ -1613,7 +1640,9 @@ function toggleRecord() {
 addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const k = e.key.toLowerCase();
-  if (k === 'f') toggleFullscreen();
+  if (k === '?' && !document.body.classList.contains('clean')) helpEl.classList.toggle('open');
+  else if (k === 'escape') helpEl.classList.remove('open');
+  else if (k === 'f') { helpEl.classList.remove('open'); toggleFullscreen(); }
   else if (k === 'r') toggleRecord();
   else if (k === 't') testBtn.click();
 });
