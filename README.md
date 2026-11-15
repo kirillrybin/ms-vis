@@ -4,7 +4,7 @@ An audio-reactive visualizer for the Elektron Model:Samples in a single HTML fil
 
 **Live demo:** https://kirillrybin.github.io/ms-vis/
 
-![ms-vis screenshot](docs/screenshot.png)
+![ms-vis screenshot](docs/screenshot.jpg)
 
 Open the demo with `?demo` (https://kirillrybin.github.io/ms-vis/?demo) to start the simulated beat automatically with a clean UI.
 
@@ -25,6 +25,8 @@ No synth at hand? Press the hidden **Test Beat** button in the bottom-right corn
 | **F** | Fullscreen. All UI is hidden, only the picture remains |
 | **R** | Start / stop video recording. A `.webm` file is downloaded when you stop |
 | **T** | Toggle Test Beat when the button is hidden |
+| **1–5** | Load a settings preset |
+| **Shift + 1–5** | Save the current settings (including the accent color) into that slot |
 
 The cursor disappears after 2 seconds without mouse movement. While recording, a small orange dot blinks at the top center. Audio is included in the recording if you pick an audio input in the settings panel (**H**, "Audio input" field). The Model:Samples shows up there as a USB audio device. Choose the input before you start recording; Chrome will ask for microphone permission. By default the recording is silent.
 
@@ -39,10 +41,11 @@ Press **H** to show or hide the panel in the top-right corner. It lets you adjus
 - bloom base level and range;
 - particle density, size and brightness;
 - strength of the note ripple and film grain;
-- accent color: a color picker plus six presets. It recolors the rare particles, ripple crests, hi-hat sparks, rings and the UI;
+- idle calm: after the chosen number of seconds without MIDI the scene gently calms down (smoother shape, softer glow, slower rotation) and wakes up instantly on the next message;
+- accent color: a color picker plus six color swatches. It recolors the rare particles, ripple crests, hi-hat sparks, rings and the UI;
 - rotation speed.
 
-Values are saved in the browser's `localStorage`. The **Reset** button restores the defaults.
+Values are saved in the browser's `localStorage`. The **Reset** button restores the defaults. Below the sliders there are five preset slots: click a slot (or press **1–5**) to load it, Shift+click (or **Shift+1–5**) to save the current settings into it.
 
 ## MIDI mapping
 
@@ -55,7 +58,7 @@ Channels 1–6 are used, which are the Model:Samples tracks by default.
 | 3 | Hi-Hat | Burst of small particles around the center |
 | 4–6 | Rings | Rotation and pulsing of thin wireframe rings, driven by the note number |
 
-Note On velocity is taken into account. Every note also sends a ripple across the core: a ring with a noise-broken crest that expands from the channel's own origin on the side facing you (kick lower left, snare upper right, hi-hat upper left, channel 4 lower right, channels 5 and 6 at the sides), lights up in orange and fades out. The note's pitch nudges the origin, so tracks look different even when they play the same note.
+Note On velocity is taken into account. Every note also sends a ripple across the core: a ring with a noise-broken crest that expands from the channel's own origin on the side facing you (kick lower left, snare upper right, hi-hat upper left, channel 4 lower right, channels 5 and 6 at the sides), lights up in orange and fades out. The note's pitch nudges the origin, so tracks look different even when they play the same note. Note Off lets a ring (channels 4–6) fade out as soon as the key is released, otherwise it is held for up to 1.5 s. Pitch Bend on any of channels 1–6 rolls the camera.
 
 | CC | Parameter | Effect |
 |----|-----------|--------|
