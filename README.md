@@ -80,7 +80,7 @@ Several channels may share a role, for example two kick tracks. Every channel th
 
 A Program Change message switches the look to a preset slot, so the visuals can follow the pattern or project you play on the synth. The program number picks the slot: 0 → slot 1, 1 → slot 2, … 4 → slot 5, and then it repeats (5 → slot 1, 6 → slot 2, and so on). It works on any channel. If the slot is empty nothing changes and the status line says so. Save your looks into the slots first (Shift+**1–5**).
 
-The checkbox in the *MIDI & clock* group turns this off (it is on by default). The setting is stored apart from the presets, so loading a preset never changes it. To see what your device sends when you change a pattern, look at the *last message* line in the same group: a Program Change shows up as `ch1 program 3`. If nothing appears, check the device's MIDI settings for sending Program Change.
+The checkbox in the *MIDI & clock* group turns this off (it is on by default). The setting is stored apart from the presets, so loading a preset never changes it. To see what your device sends when you change a pattern, look at the MIDI log in the same group: a Program Change shows up as `ch1 program 3`. If nothing appears, check the device's MIDI settings for sending Program Change.
 
 ### MIDI clock
 
@@ -98,11 +98,11 @@ The *Clock beat pulse* slider sets the strength of the pulse and of the scanner 
 
 ### Checking and remapping CCs
 
-Open the settings panel (**H**) and the *MIDI & clock* group. It shows the last message received, for example `ch2 CC 74 = 100`, including messages that are not mapped to anything and messages from channels above 6 (those are marked as ignored). Under it, a status line lists the MIDI inputs found, the one(s) being listened to and two counters: *messages* (notes, CC, pitch bend) and *clock/realtime* (MIDI clock and similar). Use them to find where the signal stops:
+Open the settings panel (**H**) and the *MIDI & clock* group. It starts with a MIDI log: the six latest messages, newest on top, for example `ch2 CC 74 = 100`. The log includes messages that are not mapped to anything and notes from channels above 6 (marked `· ignored`). A message of the same kind (same channel, type and number) updates its own line instead of adding a new one, so a knob sweep or a note-on and note-off pair never floods the list, and the box has a fixed height, so the panel does not jump. Under it, a status line lists the MIDI inputs found, the one(s) being listened to and two counters: *messages* (notes, CC, pitch bend) and *clock/realtime* (MIDI clock and similar). Use them to find where the signal stops:
 
 - *clock/realtime* grows but *messages* does not move when you turn a knob or play a pad: the device is connected but is not sending those messages. Check its MIDI output settings (for example which parameters or which port it sends to).
 - both counters stay at 0: nothing reaches the browser from the selected input. Pick another input, or choose **All inputs** in the selector in the top-left corner (it appears when more than one input exists), and check the cable, the USB connection and the device's MIDI port settings.
-- *messages* grows but nothing happens on screen: the message is probably on a channel above 6 or a CC that is not mapped, see the last message above. Some Elektron devices can send parameter changes as NRPN instead of plain CC, which this visualizer does not read.
+- *messages* grows but nothing happens on screen: the message is probably on a channel above 6 or a CC that is not mapped, see the MIDI log above. Some Elektron devices can send parameter changes as NRPN instead of plain CC, which this visualizer does not read.
 
 If the knob appears with a different CC number than the defaults, press **Learn** next to the parameter (*Cutoff*, *Bloom*, *Sharpness*, *Brightness*, *Particle size* or *Rotation*), then turn the knob on the device. That CC is bound immediately and remembered; **×** unassigns it. **Default CCs** restores the table above. The mapping is stored separately from the presets, so loading a preset never changes it.
 
