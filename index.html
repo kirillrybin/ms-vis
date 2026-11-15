@@ -60,6 +60,11 @@
   #panel .slots { display: flex; gap: 6px; margin-bottom: 10px; }
   #panel .slots button { flex: 1; margin: 0; padding: 4px 0; opacity: .55; }
   #panel .slots button.filled { opacity: 1; border-color: var(--accent); color: var(--accent); }
+  #panel details.grp { border-top: 1px solid rgba(255,255,255,.1); padding: 6px 0 2px; margin-top: 8px; }
+  #panel details.grp > summary { cursor: pointer; letter-spacing: .08em; text-transform: uppercase; opacity: .7; list-style: none; margin-bottom: 6px; }
+  #panel details.grp > summary::-webkit-details-marker { display: none; }
+  #panel details.grp > summary::before { content: '▸ '; }
+  #panel details.grp[open] > summary::before { content: '▾ '; }
   #panel .hint { opacity: .35; margin-top: 8px; }
   body.idle, body.idle * { cursor: none !important; }
   body.clean #midi-box, body.clean #status, body.clean #test-beat, body.clean #panel { display: none !important; }
@@ -473,28 +478,42 @@ const DEFAULTS = {
   glowBase: 0.25, glowRange: 2.2,
   density: 1, size: 1, bright: 1, spin: 1, auto: 1,
   ripple: 1, trail: 0.045, grain: 0.04,
-  accent: '#ff5500', idle: 8, clockFx: 1
+  accent: '#ff5500', idle: 8, clockFx: 1, groove: 'house'
 };
+// panel groups: [id, title, open by default]
+const GROUPS = [
+  ['react', 'Reaction', true],
+  ['look', 'Look', false],
+  ['midi', 'MIDI & clock', false],
+  ['perf', 'Performance', false],
+  ['test', 'Test beat', false],
+  ['rec', 'Recording', false]
+];
+const GROOVE_LABELS = [
+  ['house', 'House · 122 BPM'], ['breakbeat', 'Breakbeat · 132 BPM'], ['halftime', 'Half-time · 80 BPM'],
+  ['dnb', 'Drum & bass · 174 BPM'], ['ambient', 'Ambient · 90 BPM']
+];
+// [key, label, min, max, step, group]
 const SPEC = [
-  ['kickGain',  'Kick sensitivity', 0, 2, 0.01],
-  ['kickDecay', 'Kick decay speed', 1, 15, 0.1],
-  ['zoom',      'Kick camera zoom', 0, 2, 0.01],
-  ['snareGain', 'Snare sensitivity', 0, 2, 0.01],
-  ['snareDecay','Snare decay speed', 2, 25, 0.1],
-  ['shift',     'RGB shift max', 0, 0.04, 0.001],
-  ['hatAmount', 'Hi-hat particles', 0, 3, 0.05],
-  ['glowBase',  'Bloom base', 0, 1.5, 0.01],
-  ['glowRange', 'Bloom CC range', 0, 4, 0.05],
-  ['density',   'Particle density', 0.05, 1, 0.01],
-  ['size',      'Particle size', 0.3, 3, 0.05],
-  ['bright',    'Brightness', 0.2, 2.5, 0.01],
-  ['ripple',    'Note ripple', 0, 2, 0.05],
-  ['trail',     'Hi-hat trail', 0, 0.1, 0.005],
-  ['grain',     'Film grain', 0, 0.2, 0.005],
-  ['spin',      'Rotation speed', 0, 4, 0.05],
-  ['clockFx',   'Clock beat pulse', 0, 2, 0.05],
-  ['idle',      'Idle calm after, s (0=off)', 0, 30, 1],
-  ['auto',      'Auto quality (0/1)', 0, 1, 1]
+  ['kickGain',  'Kick sensitivity', 0, 2, 0.01, 'react'],
+  ['kickDecay', 'Kick decay speed', 1, 15, 0.1, 'react'],
+  ['zoom',      'Kick camera zoom', 0, 2, 0.01, 'react'],
+  ['snareGain', 'Snare sensitivity', 0, 2, 0.01, 'react'],
+  ['snareDecay','Snare decay speed', 2, 25, 0.1, 'react'],
+  ['shift',     'RGB shift max', 0, 0.04, 0.001, 'react'],
+  ['hatAmount', 'Hi-hat particles', 0, 3, 0.05, 'react'],
+  ['ripple',    'Note ripple', 0, 2, 0.05, 'react'],
+  ['glowBase',  'Bloom base', 0, 1.5, 0.01, 'look'],
+  ['glowRange', 'Bloom CC range', 0, 4, 0.05, 'look'],
+  ['density',   'Particle density', 0.05, 1, 0.01, 'look'],
+  ['size',      'Particle size', 0.3, 3, 0.05, 'look'],
+  ['bright',    'Brightness', 0.2, 2.5, 0.01, 'look'],
+  ['trail',     'Hi-hat trail', 0, 0.1, 0.005, 'look'],
+  ['grain',     'Film grain', 0, 0.2, 0.005, 'look'],
+  ['spin',      'Rotation speed', 0, 4, 0.05, 'look'],
+  ['clockFx',   'Clock beat pulse', 0, 2, 0.05, 'midi'],
+  ['idle',      'Idle calm after, s (0=off)', 0, 30, 1, 'perf'],
+  ['auto',      'Auto quality (0/1)', 0, 1, 1, 'perf']
 ];
 const STORE_KEY = 'ms-vis-settings-v1';
 const cfg = { ...DEFAULTS };
@@ -518,9 +537,62 @@ let onMapChange = () => {}, onLastMsg = () => {};
 
 const panel = document.getElementById('panel');
 const sliderEls = {};
+const groupBody = {};                      // group id -> container; other parts of the page add their controls here
 {
   panel.innerHTML = '<h4>Settings</h4>';
-  for (const [key, label, min, max, step] of SPEC) {
+
+  // Presets: 5 slots, key 1-5 (or click) loads, Shift+1-5 (or Shift+click) saves. They stay on top.
+  const PRESET_KEY = 'ms-vis-presets-v1';
+  let presets = {};
+  try { presets = JSON.parse(localStorage.getItem(PRESET_KEY) || '{}'); } catch (_) {}
+  const slotsLabel = document.createElement('div');
+  slotsLabel.style.cssText = 'opacity:.6;margin-bottom:4px';
+  slotsLabel.textContent = 'Presets (Shift saves)';
+  const slots = document.createElement('div');
+  slots.className = 'slots';
+  const slotBtns = [];
+  function markSlots() { slotBtns.forEach((b, i) => b.classList.toggle('filled', !!presets[i + 1])); }
+  function loadPreset(n) {
+    const pr = presets[n];
+    if (!pr) { flashStatus(`preset ${n} empty, Shift+${n} saves`); return; }
+    Object.assign(cfg, DEFAULTS, pr); saveCfg(); refreshPanel();
+    flashStatus(`preset ${n} loaded`);
+  }
+  function savePreset(n) {
+    presets[n] = { ...cfg };
+    try { localStorage.setItem(PRESET_KEY, JSON.stringify(presets)); } catch (_) {}
+    markSlots(); flashStatus(`preset ${n} saved`);
+  }
+  for (let n = 1; n <= 5; n++) {
+    const b = document.createElement('button');
+    b.textContent = n;
+    b.addEventListener('click', (e) => (e.shiftKey ? savePreset(n) : loadPreset(n)));
+    slotBtns.push(b); slots.appendChild(b);
+  }
+  markSlots();
+  panel.append(slotsLabel, slots);
+
+  // Collapsible groups; the open/closed state is remembered
+  const PANEL_KEY = 'ms-vis-panel-v1';
+  let openState = {};
+  try { openState = JSON.parse(localStorage.getItem(PANEL_KEY) || '{}'); } catch (_) {}
+  for (const [id, title, def] of GROUPS) {
+    const d = document.createElement('details');
+    d.className = 'grp';
+    d.open = id in openState ? !!openState[id] : def;
+    const sm = document.createElement('summary');
+    sm.textContent = title;
+    const body = document.createElement('div');
+    d.append(sm, body);
+    d.addEventListener('toggle', () => {
+      openState[id] = d.open;
+      try { localStorage.setItem(PANEL_KEY, JSON.stringify(openState)); } catch (_) {}
+    });
+    panel.appendChild(d);
+    groupBody[id] = body;
+  }
+
+  for (const [key, label, min, max, step, group] of SPEC) {
     const l = document.createElement('label');
     const t = document.createElement('span'); t.textContent = label;
     const v = document.createElement('span'); v.className = 'v';
@@ -530,9 +602,10 @@ const sliderEls = {};
     inp.value = cfg[key]; show();
     inp.addEventListener('input', () => { cfg[key] = +inp.value; show(); saveCfg(); });
     l.append(t, v, inp);
-    panel.appendChild(l);
+    groupBody[group].appendChild(l);
     sliderEls[key] = [inp, show];
   }
+
   // Accent colour: one THREE.Color shared by every shader, ring and the UI
   const accRow = document.createElement('div');
   accRow.style.cssText = 'display:flex;align-items:center;gap:6px;margin:10px 0 6px';
@@ -544,7 +617,7 @@ const sliderEls = {};
   accInput.style.cssText = 'width:34px;height:20px;padding:0;border:1px solid rgba(255,255,255,.25);background:none;cursor:pointer';
   accRow.append(accLabel, accInput);
   const swatches = document.createElement('div');
-  swatches.style.cssText = 'display:flex;gap:6px;margin-bottom:10px';
+  swatches.style.cssText = 'display:flex;gap:6px;margin-bottom:6px';
   function setAccent(hex) {
     if (!/^#[0-9a-f]{6}$/i.test(hex)) hex = DEFAULTS.accent;
     cfg.accent = hex;
@@ -561,20 +634,30 @@ const sliderEls = {};
     swatches.appendChild(b);
   }
   accInput.addEventListener('input', () => setAccent(accInput.value));
-  panel.append(accRow, swatches);
+  groupBody.look.append(accRow, swatches);
   setAccent(cfg.accent);
+
+  // Test beat groove
+  const grooveLabel = document.createElement('div');
+  grooveLabel.style.cssText = 'opacity:.85;margin-bottom:4px';
+  grooveLabel.textContent = 'Groove (T starts and stops it)';
+  const grooveSel = document.createElement('select');
+  for (const [id, label] of GROOVE_LABELS) {
+    const o = document.createElement('option'); o.value = id; o.textContent = label; grooveSel.appendChild(o);
+  }
+  grooveSel.value = cfg.groove;
+  grooveSel.addEventListener('change', () => { cfg.groove = grooveSel.value; saveCfg(); restartTest(); });
+  groupBody.test.append(grooveLabel, grooveSel);
 
   function refreshPanel() {
     for (const k in sliderEls) { sliderEls[k][0].value = cfg[k]; sliderEls[k][1](); }
     setAccent(cfg.accent);
+    if (grooveSel.value !== cfg.groove) { grooveSel.value = cfg.groove; restartTest(); }
   }
 
   // MIDI monitor + CC learn
-  const midiHead = document.createElement('div');
-  midiHead.style.cssText = 'opacity:.6;margin:10px 0 4px';
-  midiHead.textContent = 'MIDI';
   const lastMsg = document.createElement('div');
-  lastMsg.style.cssText = 'opacity:.75;margin-bottom:6px;min-height:1.4em;word-break:break-all';
+  lastMsg.style.cssText = 'opacity:.75;margin:8px 0 6px;min-height:1.4em;word-break:break-all';
   lastMsg.textContent = 'last message: none yet';
   onLastMsg = (text) => { lastMsg.textContent = 'last message: ' + text; };
   const statsEl = document.createElement('div');
@@ -606,47 +689,17 @@ const sliderEls = {};
   onMapChange = renderMap;
   const mapReset = document.createElement('button');
   mapReset.textContent = 'Default CCs';
-  mapReset.style.cssText = 'margin:2px 0 10px';
+  mapReset.style.cssText = 'margin:2px 0 6px';
   mapReset.addEventListener('click', () => { midiMap.cutoff = 74; midiMap.bloom = [12, 13]; learnTarget = null; saveMap(); renderMap(); });
-  panel.append(midiHead, lastMsg, statsEl,
+  groupBody.midi.append(lastMsg, statsEl,
     mapRow('Cutoff CC (noise)', 'cutoff', () => 'CC ' + midiMap.cutoff),
     mapRow('Bloom CC (glow)', 'bloom', () => 'CC ' + (midiMap.bloom.join(' / ') || '—')),
     mapReset);
   renderMap();
 
-  // Presets: 5 slots, key 1-5 (or click) loads, Shift+1-5 (or Shift+click) saves
-  const PRESET_KEY = 'ms-vis-presets-v1';
-  let presets = {};
-  try { presets = JSON.parse(localStorage.getItem(PRESET_KEY) || '{}'); } catch (_) {}
-  const slotsLabel = document.createElement('div');
-  slotsLabel.style.cssText = 'opacity:.6;margin-bottom:4px';
-  slotsLabel.textContent = 'Presets (Shift saves)';
-  const slots = document.createElement('div');
-  slots.className = 'slots';
-  const slotBtns = [];
-  function markSlots() { slotBtns.forEach((b, i) => b.classList.toggle('filled', !!presets[i + 1])); }
-  function loadPreset(n) {
-    const pr = presets[n];
-    if (!pr) { flashStatus(`preset ${n} empty, Shift+${n} saves`); return; }
-    Object.assign(cfg, DEFAULTS, pr); saveCfg(); refreshPanel();
-    flashStatus(`preset ${n} loaded`);
-  }
-  function savePreset(n) {
-    presets[n] = { ...cfg };
-    try { localStorage.setItem(PRESET_KEY, JSON.stringify(presets)); } catch (_) {}
-    markSlots(); flashStatus(`preset ${n} saved`);
-  }
-  for (let n = 1; n <= 5; n++) {
-    const b = document.createElement('button');
-    b.textContent = n;
-    b.addEventListener('click', (e) => (e.shiftKey ? savePreset(n) : loadPreset(n)));
-    slotBtns.push(b); slots.appendChild(b);
-  }
-  markSlots();
-  panel.append(slotsLabel, slots);
-
   const reset = document.createElement('button');
-  reset.textContent = 'Reset';
+  reset.textContent = 'Reset all settings';
+  reset.style.marginTop = '10px';
   reset.addEventListener('click', () => { Object.assign(cfg, DEFAULTS); saveCfg(); refreshPanel(); });
   panel.appendChild(reset);
   const hint = document.createElement('div');
@@ -860,37 +913,79 @@ if (navigator.requestMIDIAccess) {
 /* ------------------------------------------------------------------ */
 const testBtn = document.getElementById('test-beat');
 let testOn = false, testStep = 0, testTimer = 0, testStart = 0;
-const BPM = 122, STEP_MS = 60000 / BPM / 4;
 const jitter = (b, r = 18) => Math.max(1, Math.min(127, Math.round(b + (Math.random() - .5) * r)));
+const rnd = (n) => Math.floor(Math.random() * n);
+const hit = (status, note, v, r) => handleMIDI([status, note, jitter(v, r)]);
+// Each groove plays one 16th step: s = 0..15 inside the bar, bar = bar counter. Channels: 1 kick, 2 snare, 3 hat, 4-6 melodic
+const GROOVES = {
+  house: { bpm: 122, play(s, bar) {
+    if (s % 4 === 0 || s === 10) hit(0x90, 36, s % 4 === 0 ? 118 : 90);
+    if (s === 4 || s === 12 || (bar % 4 === 3 && s === 15)) hit(0x91, 38, 105);
+    if (s % 2 === 0) hit(0x92, 42, s % 4 === 2 ? 100 : 60, 30);
+    else if (Math.random() < 0.25) hit(0x92, 46, 50, 30);
+    if (s % 8 === 2) hit(0x93, 48 + rnd(12), 90);
+    if (s % 8 === 6) hit(0x94, 55 + rnd(12), 80);
+    if (s === 0 && bar % 2 === 0) hit(0x95, 60 + rnd(12), 100);
+  } },
+  breakbeat: { bpm: 132, play(s, bar) {
+    if (s === 0 || s === 7 || s === 10) hit(0x90, 36, s === 0 ? 118 : 92);
+    if (s === 4 || s === 12 || (bar % 2 === 1 && s === 15)) hit(0x91, 38, s === 15 ? 60 : 108);
+    if (s % 2 === 0) hit(0x92, 42, 70, 30); else if (s === 7 || s === 13) hit(0x92, 46, 60, 20);
+    if (s === 3 || s === 11) hit(0x93, 48 + rnd(12), 90);
+    if (s === 6) hit(0x94, 55 + rnd(12), 80);
+    if (s === 0 && bar % 2 === 0) hit(0x95, 60 + rnd(12), 100);
+  } },
+  halftime: { bpm: 80, play(s, bar) {
+    if (s === 0 || s === 10) hit(0x90, 36, s === 0 ? 120 : 95);
+    if (s === 8) hit(0x91, 38, 112);
+    hit(0x92, 42, s % 4 === 2 ? 95 : 50, 25);
+    if (s === 0 && bar % 2 === 0) hit(0x93, 48 + rnd(12), 100);
+    if (s === 8) hit(0x94, 55 + rnd(12), 85);
+    if (s === 12) hit(0x95, 60 + rnd(12), 80);
+  } },
+  dnb: { bpm: 174, play(s, bar) {
+    if (s === 0 || s === 10) hit(0x90, 36, 115);
+    if (s === 4 || s === 12) hit(0x91, 38, 110);
+    hit(0x92, 42, s % 2 === 0 ? 75 : 45, 25);
+    if (s === 6 || s === 14) hit(0x93, 48 + rnd(12), 85);
+    if (s === 2 && bar % 2 === 0) hit(0x94, 55 + rnd(12), 80);
+    if (s === 0 && bar % 4 === 0) hit(0x95, 60 + rnd(12), 100);
+  } },
+  ambient: { bpm: 90, play(s, bar) {
+    if (s === 0 && bar % 2 === 0) hit(0x90, 36, 85);
+    if (s === 12 && bar % 4 === 3) hit(0x91, 38, 70);
+    if (s % 4 === 2 && Math.random() < 0.5) hit(0x92, 42, 50, 20);
+    if (s === 0) hit(0x93 + (bar % 3), 48 + rnd(24), 90);
+    if (s === 8 && bar % 2 === 1) hit(0x94 + (bar % 2), 55 + rnd(12), 75);
+  } }
+};
 function testTick() {
+  const g = GROOVES[cfg.groove] || GROOVES.house;
   const s = testStep % 16, bar = Math.floor(testStep / 16);
-  if (s % 4 === 0 || s === 10) handleMIDI([0x90, 36, jitter(s % 4 === 0 ? 118 : 90)]);
-  if (s === 4 || s === 12 || (bar % 4 === 3 && s === 15)) handleMIDI([0x91, 38, jitter(105)]);
-  if (s % 2 === 0) handleMIDI([0x92, 42, jitter(s % 4 === 2 ? 100 : 60, 30)]);
-  else if (Math.random() < 0.25) handleMIDI([0x92, 46, jitter(50, 30)]);
-  if (s % 8 === 2) handleMIDI([0x93, 48 + Math.floor(Math.random() * 12), jitter(90)]);
-  if (s % 8 === 6) handleMIDI([0x94, 55 + Math.floor(Math.random() * 12), jitter(80)]);
-  if (s === 0 && bar % 2 === 0) handleMIDI([0x95, 60 + Math.floor(Math.random() * 12), jitter(100)]);
+  g.play(s, bar);
   // slow CC sweeps
   const t = (performance.now() - testStart) / 1000;
   handleMIDI([0xb0, 74, Math.round((0.5 + 0.5 * Math.sin(t * 0.35 + 0.6)) * 127)]);
   handleMIDI([0xb0, s % 2 ? 12 : 13, Math.round((0.5 + 0.5 * Math.sin(t * 0.22 + 4)) * 127)]);
   testStep++;
 }
-testBtn.addEventListener('click', () => {
-  testOn = !testOn;
-  testBtn.classList.toggle('on', testOn);
-  testBtn.textContent = testOn ? 'Stop Beat' : 'Test Beat';
-  clearInterval(testTimer);
-  if (!testOn) { CLK.running = null; CLK.bpm = 0; CLK.times = []; }
-  if (testOn) {
-    // one timer drives both the clock (24 ppqn) and the groove (every 6th tick), so they never drift apart
-    testStep = 0; testStart = performance.now();
-    CLK.tick = 0; CLK.bar = 0; CLK.running = true; CLK.bpm = 0; CLK.times = [];
-    let n = 0;
-    testTimer = setInterval(() => { handleMIDI([0xf8], performance.now()); if (n++ % 6 === 0) testTick(); }, 60000 / BPM / 24);
-  }
-});
+function stopTest() {
+  clearInterval(testTimer); testOn = false;
+  testBtn.classList.remove('on'); testBtn.textContent = 'Test Beat';
+  CLK.running = null; CLK.bpm = 0; CLK.times = [];
+}
+function startTest() {
+  clearInterval(testTimer); testOn = true;
+  testBtn.classList.add('on'); testBtn.textContent = 'Stop Beat';
+  const g = GROOVES[cfg.groove] || GROOVES.house;
+  // one timer drives both the clock (24 ppqn) and the groove (every 6th tick), so they never drift apart
+  testStep = 0; testStart = performance.now();
+  CLK.tick = 0; CLK.bar = 0; CLK.running = true; CLK.bpm = 0; CLK.times = [];
+  let n = 0;
+  testTimer = setInterval(() => { handleMIDI([0xf8], performance.now()); if (n++ % 6 === 0) testTick(); }, 60000 / g.bpm / 24);
+}
+function restartTest() { if (testOn) startTest(); }
+testBtn.addEventListener('click', () => (testOn ? stopTest() : startTest()));
 
 // ?demo — start Test Beat automatically with a clean UI (used for screenshots)
 if (new URLSearchParams(location.search).has('demo')) {
@@ -935,7 +1030,7 @@ let audioStream = null;
   bar.style.cssText = 'height:100%;width:0;background:var(--accent)';
   meter.appendChild(bar);
   wrap.append(info, meter);
-  panel.insertBefore(wrap, panel.querySelector('.hint'));
+  groupBody.rec.appendChild(wrap);
   let actx = null, analyser = null, buf = null, meterTimer = 0;
   function startMeter(stream) {
     stopMeter();

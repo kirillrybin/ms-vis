@@ -16,7 +16,7 @@ Open the demo with `?demo` (https://kirillrybin.github.io/ms-vis/?demo) to start
 
 An internet connection is required: Three.js r160 and its addons are loaded from a CDN (jsdelivr).
 
-No synth at hand? Press the hidden **Test Beat** button in the bottom-right corner (it appears on hover). It plays a simulated groove through the same handlers as real MIDI.
+No synth at hand? Press the hidden **Test Beat** button in the bottom-right corner (it appears on hover). It plays a simulated groove through the same handlers as real MIDI. There are five grooves to choose from in the *Test beat* group of the settings panel: House (122 BPM), Breakbeat (132), Half-time (80), Drum & bass (174) and Ambient (90). Changing the groove while it plays switches to the new one at once.
 
 ## Projector mode
 
@@ -28,25 +28,20 @@ No synth at hand? Press the hidden **Test Beat** button in the bottom-right corn
 | **1–5** | Load a settings preset |
 | **Shift + 1–5** | Save the current settings (including the accent color) into that slot |
 
-The cursor disappears after 2 seconds without mouse movement. While recording, a small orange dot blinks at the top center. Audio is included in the recording if you pick an audio input in the settings panel (**H**, "Audio input" field). The Model:Samples shows up there as a USB audio device. Choose the input before you start recording; Chrome will ask for microphone permission. By default the recording is silent.
+The cursor disappears after 2 seconds without mouse movement. While recording, a small orange dot blinks at the top center. Audio is included in the recording if you pick an audio input in the settings panel (**H**, *Recording* group). The Model:Samples shows up there as a USB audio device. Choose the input before you start recording; Chrome will ask for microphone permission. By default the recording is silent.
 
 ## Settings
 
-Press **H** to show or hide the panel in the top-right corner. It lets you adjust:
+Press **H** to show or hide the panel in the top-right corner. The five preset slots are always at the top; everything else is in collapsible groups (the open or closed state of each group is remembered):
 
-- kick and snare sensitivity and decay speed;
-- camera zoom on kick;
-- maximum RGB shift on snare;
-- number of hi-hat particles and the length of their trails;
-- bloom base level and range;
-- particle density, size and brightness;
-- strength of the note ripple and film grain;
-- strength of the clock beat pulse;
-- idle calm: after the chosen number of seconds without MIDI the scene gently calms down (smoother shape, softer glow, slower rotation) and wakes up instantly on the next message;
-- accent color: a color picker plus six color swatches. It recolors the rare particles, ripple crests, hi-hat sparks, rings and the UI;
-- rotation speed.
+- **Reaction:** kick and snare sensitivity and decay speed, camera zoom on kick, maximum RGB shift on snare, number of hi-hat particles, strength of the note ripple;
+- **Look:** bloom base level and range, particle density, size and brightness, hi-hat trails, film grain, rotation speed, and the accent color (a color picker plus six swatches that recolor the rare particles, ripple rings, hi-hat sparks, rings, scanner band and the UI);
+- **MIDI & clock:** strength of the clock beat pulse and scanner band, the last MIDI message, connection diagnostics and CC learn;
+- **Performance:** idle calm (after the chosen number of seconds without MIDI the scene gently calms down: smoother shape, softer glow, slower rotation; it wakes up instantly on the next message) and auto quality;
+- **Test beat:** the groove played by Test Beat;
+- **Recording:** the audio input used for video recording.
 
-Values are saved in the browser's `localStorage`. The **Reset** button restores the defaults. Below the sliders there are five preset slots: click a slot (or press **1–5**) to load it, Shift+click (or **Shift+1–5**) to save the current settings into it.
+Values are saved in the browser's `localStorage`. **Reset all settings** at the bottom restores the defaults. To use a preset slot, click it (or press **1–5**) to load it, Shift+click (or **Shift+1–5**) to save the current settings into it.
 
 ## MIDI mapping
 
@@ -80,11 +75,11 @@ When the device sends MIDI clock, the visualizer follows the tempo:
 - **Start** resets the count to the first beat of the first bar, **Stop** freezes it, **Continue** resumes it and **Song Position** realigns the bar. If the page is opened while the sequencer is already running, the beats are counted from the moment the page started receiving clock until the next Start or Song Position, so the downbeat may be off;
 - a running sequencer also keeps the scene awake, so the idle calm does not kick in during playback.
 
-The *Clock beat pulse* slider sets the strength of the pulse and of the scanner band (0 turns both off). Test Beat is a real clock source (122 BPM) and drives the same pulse, so you can see how it works without a synth. On Elektron devices, enable clock output in the MIDI sync settings of the device if the *clock/realtime* counter in the panel stays at 0.
+The *Clock beat pulse* slider sets the strength of the pulse and of the scanner band (0 turns both off). Test Beat is a real clock source (the tempo of the chosen groove) and drives the same pulse, so you can see how it works without a synth. On Elektron devices, enable clock output in the MIDI sync settings of the device if the *clock/realtime* counter in the panel stays at 0.
 
 ### Checking and remapping CCs
 
-Open the settings panel (**H**). The **MIDI** block shows the last message received, for example `ch2 CC 74 = 100`, including messages that are not mapped to anything and messages from channels above 6 (those are marked as ignored). Under it, a status line lists the MIDI inputs found, the one(s) being listened to and two counters: *messages* (notes, CC, pitch bend) and *clock/realtime* (MIDI clock and similar). Use them to find where the signal stops:
+Open the settings panel (**H**) and the *MIDI & clock* group. It shows the last message received, for example `ch2 CC 74 = 100`, including messages that are not mapped to anything and messages from channels above 6 (those are marked as ignored). Under it, a status line lists the MIDI inputs found, the one(s) being listened to and two counters: *messages* (notes, CC, pitch bend) and *clock/realtime* (MIDI clock and similar). Use them to find where the signal stops:
 
 - *clock/realtime* grows but *messages* does not move when you turn a knob or play a pad: the device is connected but is not sending those messages. Check its MIDI output settings (for example which parameters or which port it sends to).
 - both counters stay at 0: nothing reaches the browser from the selected input. Pick another input, or choose **All inputs** in the selector in the top-left corner (it appears when more than one input exists), and check the cable, the USB connection and the device's MIDI port settings.
@@ -99,7 +94,7 @@ If the knob appears with a different CC number than the defaults, press **Learn*
 - **Ripples:** up to six rings (one per channel) are evaluated in the vertex shader. They show mostly as light and color, not as geometry. A ring costs nothing while it is inactive.
 - **Trails:** every hi-hat particle is drawn as a head plus 4 fading samples, all computed in the shader from the same spawn data.
 - **Film grain:** a final full-screen pass adds subtle noise, strongest in the mid-tones, and leaves pure black clean.
-- **Auto quality:** if FPS stays below 45, particle density is lowered (and, as a last resort, the pixel ratio drops to 1); it recovers slowly when FPS is stable. The current FPS and quality level are shown in the settings panel title. It can be switched off with the "Auto quality" slider.
+- **Auto quality:** if FPS stays below 45, particle density is lowered (and, as a last resort, the pixel ratio drops to 1); it recovers slowly when FPS is stable. The current FPS and quality level are shown in the settings panel title. It can be switched off with the "Auto quality" slider (Performance group).
 - **Post-processing:** `EffectComposer` with `UnrealBloomPass`, `RGBShiftShader` and a custom inversion pass.
 - **All code** (HTML, CSS, JS, GLSL) lives in a single `index.html` file.
 
