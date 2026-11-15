@@ -364,12 +364,16 @@ scene.add(world);
 
 // --- Core shapes: every shape is a cloud of particles plus a wireframe, all deformed by the same shader ---
 const N = 36000;
+// shape parameters: the defaults are also the defaults of the settings (see DEFAULTS); `sp` is what the built shapes use now
+const SHAPE_PARAM_DEFAULTS = { torusR: 0.72, torusTube: 0.3, knotP: 2, knotQ: 3, knotTube: 0.17, cubeSize: 1.4, discThick: 0.2 };
+const SHAPE_PARAM_KEYS = { torus: ['torusR', 'torusTube'], knot: ['knotP', 'knotQ', 'knotTube'], cube: ['cubeSize'], disc: ['discThick'] };
+const sp = { ...SHAPE_PARAM_DEFAULTS };
 const SHAPES = {
   sphere: null,                                                    // fibonacci sphere + icosphere, built below
-  torus:  () => new THREE.TorusGeometry(0.72, 0.3, 24, 64),
-  cube:   () => new THREE.BoxGeometry(1.4, 1.4, 1.4, 8, 8, 8),
-  knot:   () => new THREE.TorusKnotGeometry(0.62, 0.17, 160, 14, 2, 3),
-  disc:   () => new THREE.CylinderGeometry(1.15, 1.15, 0.2, 56, 4).rotateX(0.75),  // tilted, so it does not turn edge-on
+  torus:  () => new THREE.TorusGeometry(sp.torusR, sp.torusTube, 24, 64),
+  cube:   () => new THREE.BoxGeometry(sp.cubeSize, sp.cubeSize, sp.cubeSize, 8, 8, 8),
+  knot:   () => new THREE.TorusKnotGeometry(0.62, sp.knotTube, 160, 14, sp.knotP, sp.knotQ),
+  disc:   () => new THREE.CylinderGeometry(1.15, 1.15, sp.discThick, 56, 4).rotateX(0.75),  // tilted, so it does not turn edge-on
   teapot: () => {                                                  // the Utah teapot, centred and scaled to fit the same space as the other shapes
     const g = new TeapotGeometry(1, 10, true, true, true, true, true);
     g.computeBoundingBox();
@@ -418,8 +422,8 @@ function sampleSurface(geo, count, rng) {    // uniform random points on the sur
   return out;
 }
 const shapeGroups = {};
-for (const id of Object.keys(SHAPES)) {
-  const rng = mulberry32(1234 + id.length * 97);
+function makeShapeGroup(id) {
+  const rng = mulberry32(1234 + id.length * 97);        // the seed depends on the shape only, so parameter changes keep the particles stable
   let pts, wireGeo, tmp = null;
   if (id === 'sphere') {
     pts = new Float32Array(N * 3);
@@ -431,6 +435,8 @@ for (const id of Object.keys(SHAPES)) {
     tmp = new THREE.IcosahedronGeometry(1, 5);
   } else {
     tmp = SHAPES[id]();
+    tmp.computeBoundingSphere();
+    if (tmp.boundingSphere.radius > 1.6) tmp.scale(...Array(3).fill(1.6 / tmp.boundingSphere.radius));   // never outgrow the view
     pts = sampleSurface(tmp, N, rng);
   }
   wireGeo = new THREE.WireframeGeometry(tmp);
@@ -444,7 +450,28 @@ for (const id of Object.keys(SHAPES)) {
   grp.add(new THREE.Points(g, coreMat), new THREE.LineSegments(wireGeo, wireMat));
   grp.visible = false;
   world.add(grp);
+  return grp;
+}
+for (const id of Object.keys(SHAPES)) shapeGroups[id] = makeShapeGroup(id);
+function rebuildShape(id) {                              // replace one built-in shape after its parameters changed
+  const old = shapeGroups[id], grp = makeShapeGroup(id);
+  grp.visible = old.visible;
+  world.remove(old);
+  old.traverse(o => { if (o.geometry) o.geometry.dispose(); });
   shapeGroups[id] = grp;
+}
+function syncShapeParams(src) {                          // take the parameters from the settings, rebuild only the shapes that changed
+  const next = {};
+  for (const k in sp) {
+    let v = Number(src[k]);
+    if (!isFinite(v)) v = SHAPE_PARAM_DEFAULTS[k];
+    next[k] = (k === 'knotP' || k === 'knotQ') ? Math.max(1, Math.round(v)) : v;
+  }
+  for (const [id, keys] of Object.entries(SHAPE_PARAM_KEYS)) {
+    if (!keys.some(k => sp[k] !== next[k])) continue;
+    for (const k of keys) sp[k] = next[k];
+    rebuildShape(id);
+  }
 }
 // switching shape: the core collapses, swaps at the smallest size and blooms back
 const shapeState = { cur: 'sphere', pending: null, t: 0 };
@@ -670,7 +697,8 @@ const DEFAULTS = {
   glowBase: 0.25, glowRange: 2.2,
   density: 1, size: 1, bright: 1, spin: 1, auto: 1,
   ripple: 1, trail: 0.045, grain: 0.04,
-  accent: '#ff5500', idle: 8, clockFx: 1, groove: 'house', shape: 'sphere'
+  accent: '#ff5500', idle: 8, clockFx: 1, groove: 'house', shape: 'sphere',
+  ...SHAPE_PARAM_DEFAULTS
 };
 // panel groups: [id, title, open by default]
 const GROUPS = [
@@ -704,6 +732,13 @@ const SPEC = [
   ['trail',     'Hi-hat trail', 0, 0.1, 0.005, 'look'],
   ['grain',     'Film grain', 0, 0.2, 0.005, 'look'],
   ['spin',      'Rotation speed', 0, 4, 0.05, 'look'],
+  ['torusR',    'Torus radius', 0.4, 1, 0.01, 'look', 'torus'],
+  ['torusTube', 'Torus tube', 0.08, 0.5, 0.01, 'look', 'torus'],
+  ['knotP',     'Knot windings P', 1, 7, 1, 'look', 'knot'],
+  ['knotQ',     'Knot windings Q', 1, 7, 1, 'look', 'knot'],
+  ['knotTube',  'Knot tube', 0.08, 0.35, 0.01, 'look', 'knot'],
+  ['cubeSize',  'Cube size', 0.8, 1.8, 0.01, 'look', 'cube'],
+  ['discThick', 'Disc thickness', 0.05, 0.6, 0.01, 'look', 'disc'],
   ['clockFx',   'Clock beat pulse', 0, 2, 0.05, 'midi'],
   ['idle',      'Idle calm after, s (0=off)', 0, 30, 1, 'perf'],
   ['auto',      'Auto quality (0/1)', 0, 1, 1, 'perf']
@@ -713,6 +748,7 @@ const cfg = { ...DEFAULTS };
 try { Object.assign(cfg, JSON.parse(localStorage.getItem(STORE_KEY) || '{}')); } catch (_) {}
 function saveCfg() { try { localStorage.setItem(STORE_KEY, JSON.stringify(cfg)); } catch (_) {} }
 if (cfg.shape !== 'custom' && !shapeGroups[cfg.shape]) cfg.shape = 'sphere';   // 'custom' stays saved while the model is still loading
+syncShapeParams(cfg);                                  // saved shape parameters, before the first frame
 showShape(shapeGroups[cfg.shape] ? cfg.shape : 'sphere');                                  // the saved shape appears at once, without the transition
 
 // MIDI CC mapping lives apart from the look settings, so presets never change it.
@@ -843,7 +879,11 @@ const groupBody = {};                      // group id -> container; other parts
     groupBody[id] = body;
   }
 
-  for (const [key, label, min, max, step, group] of SPEC) {
+  const paramBox = document.createElement('div');       // sliders of the selected shape only
+  const paramLabels = [];
+  let shapeSyncTimer = 0;
+  function showParams() { for (const [l, id] of paramLabels) l.style.display = id === cfg.shape ? '' : 'none'; }
+  for (const [key, label, min, max, step, group, shapeId] of SPEC) {
     const l = document.createElement('label');
     const t = document.createElement('span'); t.textContent = label;
     const v = document.createElement('span'); v.className = 'v';
@@ -851,9 +891,13 @@ const groupBody = {};                      // group id -> container; other parts
     inp.type = 'range'; inp.min = min; inp.max = max; inp.step = step;
     const show = () => { v.textContent = (+cfg[key]).toFixed(step < 0.01 ? 3 : step < 0.1 ? 2 : 1); };
     inp.value = cfg[key]; show();
-    inp.addEventListener('input', () => { cfg[key] = +inp.value; show(); saveCfg(); });
+    inp.addEventListener('input', () => {
+      cfg[key] = +inp.value; show(); saveCfg();
+      if (shapeId) { clearTimeout(shapeSyncTimer); shapeSyncTimer = setTimeout(() => syncShapeParams(cfg), 150); }
+    });
     l.append(t, v, inp);
-    groupBody[group].appendChild(l);
+    if (shapeId) { paramBox.appendChild(l); paramLabels.push([l, shapeId]); }
+    else groupBody[group].appendChild(l);
     sliderEls[key] = [inp, show];
   }
 
@@ -896,7 +940,8 @@ const groupBody = {};                      // group id -> container; other parts
   customOpt.value = 'custom'; customOpt.textContent = 'Custom (none loaded)'; customOpt.disabled = true;
   shapeSel.appendChild(customOpt);
   shapeSel.value = cfg.shape;
-  shapeSel.addEventListener('change', () => { cfg.shape = shapeSel.value; saveCfg(); setShape(cfg.shape); });
+  shapeSel.addEventListener('change', () => { cfg.shape = shapeSel.value; saveCfg(); setShape(cfg.shape); showParams(); });
+  showParams();
   // custom model: load / remove, with a status line
   const modelFile = document.createElement('input');
   modelFile.type = 'file'; modelFile.accept = '.obj,.stl,.glb'; modelFile.style.display = 'none';
@@ -914,7 +959,7 @@ const groupBody = {};                      // group id -> container; other parts
       customOpt.disabled = false; customOpt.textContent = `Custom (${name.length > 24 ? name.slice(0, 21) + '…' : name})`;
       modelDel.disabled = false;
       modelMsg.textContent = `${name}: ${tris.toLocaleString('en-US')} triangles` + (tris > WIRE_FULL_TRIS ? ' (wireframe is a sample)' : '');
-      if (fresh) { cfg.shape = 'custom'; saveCfg(); shapeSel.value = 'custom'; setShape('custom'); }
+      if (fresh) { cfg.shape = 'custom'; saveCfg(); shapeSel.value = 'custom'; setShape('custom'); showParams(); }
       else if (cfg.shape === 'custom') { showShape('custom'); shapeSel.value = 'custom'; }
       return true;
     } catch (e) { modelMsg.textContent = 'could not load: ' + e.message; return false; }
@@ -931,12 +976,12 @@ const groupBody = {};                      // group id -> container; other parts
   modelDel.addEventListener('click', async () => {
     removeCustom();
     customOpt.disabled = true; customOpt.textContent = 'Custom (none loaded)'; modelDel.disabled = true;
-    if (cfg.shape === 'custom') { cfg.shape = 'sphere'; saveCfg(); shapeSel.value = 'sphere'; }
+    if (cfg.shape === 'custom') { cfg.shape = 'sphere'; saveCfg(); shapeSel.value = 'sphere'; showParams(); }
     modelMsg.textContent = 'model removed';
     try { await dbDelModel(); } catch (_) {}
   });
   dbGetModel().then(m => { if (m && m.name && m.buf instanceof ArrayBuffer) useModel(m.name, m.buf, false); }).catch(() => {});
-  groupBody.look.append(shapeLabel, shapeSel, modelBtn, modelDel, modelFile, modelMsg, accRow, swatches);
+  groupBody.look.append(shapeLabel, shapeSel, paramBox, modelBtn, modelDel, modelFile, modelMsg, accRow, swatches);
   setAccent(cfg.accent);
 
   // Test beat groove
@@ -955,7 +1000,8 @@ const groupBody = {};                      // group id -> container; other parts
     for (const k in sliderEls) { sliderEls[k][0].value = cfg[k]; sliderEls[k][1](); }
     setAccent(cfg.accent);
     if (grooveSel.value !== cfg.groove) { grooveSel.value = cfg.groove; restartTest(); }
-    shapeSel.value = cfg.shape; setShape(cfg.shape);
+    clearTimeout(shapeSyncTimer); syncShapeParams(cfg);
+    shapeSel.value = cfg.shape; setShape(cfg.shape); showParams();
   }
 
   // MIDI monitor + CC learn
@@ -1094,6 +1140,7 @@ const groupBody = {};                      // group id -> container; other parts
     const out = {};
     if (!o || typeof o !== 'object') return out;
     for (const [key, , min, max] of SPEC) if (typeof o[key] === 'number' && isFinite(o[key])) out[key] = clampNum(o[key], min, max);
+    for (const k of ['knotP', 'knotQ']) if (k in out) out[k] = Math.round(out[k]);     // windings are whole numbers
     if (typeof o.accent === 'string' && /^#[0-9a-f]{6}$/i.test(o.accent)) out.accent = o.accent.toLowerCase();
     if (GROOVE_LABELS.some(g => g[0] === o.groove)) out.groove = o.groove;
     if (typeof o.shape === 'string' && (shapeGroups[o.shape] || o.shape === 'custom')) out.shape = o.shape;

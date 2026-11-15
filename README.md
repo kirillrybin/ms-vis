@@ -61,6 +61,19 @@ The core can take six shapes: **Sphere**, **Torus**, **Cube**, **Knot**, **Disc*
 
 The shape is part of a preset, like the colors and the sliders. So a Program Change from the synth, a preset key (**1–5**) or a click on a preset slot changes the whole form of the visuals, not only the tint: save a different shape into each slot and the look follows the pattern you play.
 
+### Shape parameters
+
+Under the shape selector in the *Look* group, the sliders of the selected shape appear (the others stay hidden). Changing a slider rebuilds only that shape, a fraction of a second after you stop moving it. The values are saved in presets and in the settings export like the other sliders.
+
+| Shape | Parameters |
+|-------|------------|
+| Torus | radius (0.4–1.0), tube thickness (0.08–0.5) |
+| Knot | windings P and Q (1–7, whole numbers), tube thickness (0.08–0.35) |
+| Cube | size (0.8–1.8) |
+| Disc | thickness (0.05–0.6) |
+
+Sphere and Teapot have no parameters. A shape that would grow past the view is scaled down to fit.
+
 ### Your own model
 
 **Load model…** in the *Look* group turns an `.obj`, `.stl` or `.glb` file into a seventh shape, **Custom**. All meshes in the file are merged, centred and scaled to the same size as the other shapes, then sampled into the particle cloud. The file is only parsed as data: it may be up to 20 MB and 300,000 triangles, and a `.glb` must have its buffers embedded (textures and materials are ignored). Models over 15,000 triangles draw their wireframe as a random sample of the edges, to keep the frame rate up. **Remove** drops the model and returns to the sphere.
