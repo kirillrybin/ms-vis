@@ -148,9 +148,10 @@ float waves(vec3 p){
   for (int i = 0; i < 6; i++) {
     if (uWaveAmt[i] < 0.01) continue;
     float ang = acos(clamp(dot(n, uWaveDir[i]), -1.0, 1.0));
-    float band = exp(-pow((ang - uWaveAge[i] * 2.0) / 0.42, 2.0));
+    float front = 0.16 + uWaveAge[i] * 1.9;                 // wave starts as a visible cap and sweeps outwards
+    float band = exp(-pow((ang - front) / 0.38, 2.0)) + 0.6 * exp(-pow(ang / 0.45, 2.0)) * exp(-uWaveAge[i] * 9.0);
     float ridge = 1.0 - abs(snoise(n * 3.2 + uWaveDir[i] * 5.0 + uTime * 0.4));
-    w += uWaveAmt[i] * band * (0.2 + ridge * ridge);
+    w += uWaveAmt[i] * band * (0.25 + ridge * ridge);
   }
   return w;
 }
@@ -160,10 +161,11 @@ float disp(vec3 p){
   float k2 = uAmp * uAmp;
   float n2 = k2 > 0.002 ? snoise(q*2.3 + 7.0) : 0.0;   // 2nd octave only when audible
   float spike = pow(max(n,0.0), 2.0) * uAmp * uAmp * 1.6;
-  return n*uAmp*0.45 + n2*uAmp*uAmp*0.25 + spike + waves(p)*0.3;
+  return n*uAmp*0.45 + n2*uAmp*uAmp*0.25 + spike;
 }
-vec3 displace(vec3 p, out float d){
-  d = disp(p);
+vec3 displace(vec3 p, out float d, out float wv){
+  wv = waves(p);
+  d = disp(p) + wv * 0.5;
   return p * (1.0 + uKick*0.32 + d);
 }`;
 
@@ -181,15 +183,15 @@ uniform float uBright;
 varying float vAccent;
 varying float vBright;
 void main(){
-  float d;
-  vec3 p = displace(position, d);
+  float d, wv;
+  vec3 p = displace(position, d, wv);
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
   if (aRand > uDensity) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); }
   gl_PointSize = (1.2 + aRand*1.6) * uSize * uPx * (3.2 / -mv.z);
   float accent = step(aRand, 0.035);                 // rare orange particles
-  vAccent = accent * (0.55 + uKick*0.45);
-  vBright = clamp(0.35 + abs(d)*1.6 + uKick*0.5, 0.0, 1.5) * uBright;
+  vAccent = clamp(accent * (0.55 + uKick*0.45) + wv * 1.6, 0.0, 1.0);   // ripple crest turns orange
+  vBright = clamp(0.35 + abs(d)*1.6 + uKick*0.5 + wv*1.0, 0.0, 1.5) * uBright;
 }`;
 const coreFrag = /* glsl */`
 uniform vec3 uOrange;
@@ -208,19 +210,21 @@ const wireVert = /* glsl */`
 ${GLSL_NOISE}
 ${GLSL_DISP}
 varying float vD;
+varying float vW;
 void main(){
-  float d;
-  vec3 p = displace(position, d);
-  vD = d;
+  float d, wv;
+  vec3 p = displace(position, d, wv);
+  vD = d; vW = wv;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
 }`;
 const wireFrag = /* glsl */`
 uniform vec3 uOrange;
 uniform float uKick;
 varying float vD;
+varying float vW;
 void main(){
-  float k = 0.10 + abs(vD)*0.5 + uKick*0.25;
-  vec3 col = mix(vec3(0.85), uOrange, clamp(uKick*0.35 + max(vD,0.0)*0.6, 0.0, 0.8));
+  float k = 0.10 + abs(vD)*0.5 + uKick*0.25 + vW*0.5;
+  vec3 col = mix(vec3(0.85), uOrange, clamp(uKick*0.35 + max(vD,0.0)*0.6 + vW*1.5, 0.0, 0.95));
   gl_FragColor = vec4(col, clamp(k, 0.0, 0.7));
 }`;
 
@@ -512,11 +516,17 @@ function flashStatus(txt) {
   statusTimer = setTimeout(() => { statusEl.style.opacity = ''; }, 400);
 }
 
-// Each channel owns a ripple origin on the core (octahedron axes); the note nudges it
+// Each channel owns a ripple origin. Origins are defined in view space, on the side of the core
+// that faces the camera, so every hit is clearly visible; the note nudges the point.
 const WAVE_ANCHOR = [
-  new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(1, 0, 0),
-  new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1)
-];
+  [-0.60, -0.45, 0.66],  // ch1 kick   : lower left
+  [ 0.60,  0.45, 0.66],  // ch2 snare  : upper right
+  [-0.60,  0.45, 0.66],  // ch3 hat    : upper left
+  [ 0.60, -0.45, 0.66],  // ch4        : lower right
+  [-0.90,  0.00, 0.44],  // ch5        : left
+  [ 0.90,  0.00, 0.44]   // ch6        : right
+].map(a => new THREE.Vector3(...a).normalize());
+const _q = new THREE.Quaternion();
 const _tmp = new THREE.Vector3();
 function onNote(ch, note, vel) {
   const v = vel / 127;
@@ -524,9 +534,10 @@ function onNote(ch, note, vel) {
     const lon = (note % 12) / 12 * Math.PI * 2;
     const lat = THREE.MathUtils.clamp((note - 48) / 48, -0.5, 0.5) * Math.PI * 0.9;
     shared.uWaveDir.value[ch].copy(WAVE_ANCHOR[ch]).addScaledVector(
-      _tmp.set(Math.cos(lat) * Math.cos(lon), Math.sin(lat), Math.cos(lat) * Math.sin(lon)), 0.45).normalize();
+      _tmp.set(Math.cos(lat) * Math.cos(lon), Math.sin(lat), Math.cos(lat) * Math.sin(lon)), 0.22).normalize()
+      .applyQuaternion(_q.copy(world.quaternion).invert());     // view space -> core space
     S.waveAge[ch] = 0;
-    S.wave[ch] = (0.4 + v * 0.6) * cfg.ripple;
+    S.wave[ch] = (0.55 + v * 0.45) * cfg.ripple;
   }
   if (ch === 0) {                       // Kick
     S.kick = Math.max(S.kick, (0.35 + v * 0.65) * cfg.kickGain);

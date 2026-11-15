@@ -54,7 +54,7 @@ Channels 1–6 are used, which are the Model:Samples tracks by default.
 | 3 | Hi-Hat | Burst of small particles around the center |
 | 4–6 | Rings | Rotation and pulsing of thin wireframe rings, driven by the note number |
 
-Note On velocity is taken into account. Every note also sends a ripple across the core: a ring with a noise-broken crest that expands from the channel's own origin (kick at the bottom, snare at the top, hi-hat on the right, channels 4–6 on the left, front and back) and fades out. The note's pitch nudges the origin, so tracks look different even when they play the same note.
+Note On velocity is taken into account. Every note also sends a ripple across the core: a ring with a noise-broken crest that expands from the channel's own origin on the side facing you (kick lower left, snare upper right, hi-hat upper left, channel 4 lower right, channels 5 and 6 at the sides), lights up in orange and fades out. The note's pitch nudges the origin, so tracks look different even when they play the same note.
 
 | CC | Parameter | Effect |
 |----|-----------|--------|
