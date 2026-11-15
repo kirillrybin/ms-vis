@@ -39,9 +39,19 @@ Press **H** to show or hide the panel in the top-right corner. The five preset s
 - **MIDI & clock:** strength of the clock beat pulse and scanner band, the last MIDI message, connection diagnostics and CC learn;
 - **Performance:** idle calm (after the chosen number of seconds without MIDI the scene gently calms down: smoother shape, softer glow, slower rotation; it wakes up instantly on the next message) and auto quality;
 - **Test beat:** the groove played by Test Beat;
-- **Recording:** the audio input used for video recording.
+- **Recording:** the audio input used for video recording;
+- **Backup:** export and import of your whole setup (see below).
 
 Values are saved in the browser's `localStorage`. **Reset all settings** at the bottom restores the defaults. To use a preset slot, click it (or press **1–5**) to load it, Shift+click (or **Shift+1–5**) to save the current settings into it.
+
+### Backup
+
+Everything is stored in the browser's `localStorage`, so it lives in one browser on one computer. The *Backup* group of the settings panel moves it around:
+
+- **Export settings** downloads `ms-vis-settings-<date>.json` with the current look settings, the five preset slots (shapes included), the CC mapping, the track roles and the Program Change option;
+- **Import settings…** reads such a file back. Presets in the file replace the slots with the same number; slots that are not in the file stay as they are. The panel tells you what was imported.
+
+The importer only accepts files that were made by this app (`"format": "ms-vis-settings"`), refuses files over 200 KB and checks every value: numbers are clamped to the range of their slider, colors, shapes, grooves and roles must be known values, CC numbers must be integers from 0 to 127, and anything unknown is ignored. A broken or hostile file cannot put the app into a bad state, it can only fail with a message.
 
 ## Shapes
 

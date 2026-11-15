@@ -542,7 +542,8 @@ const GROUPS = [
   ['midi', 'MIDI & clock', false],
   ['perf', 'Performance', false],
   ['test', 'Test beat', false],
-  ['rec', 'Recording', false]
+  ['rec', 'Recording', false],
+  ['backup', 'Backup', false]
 ];
 const GROOVE_LABELS = [
   ['house', 'House · 122 BPM'], ['breakbeat', 'Breakbeat · 132 BPM'], ['halftime', 'Half-time · 80 BPM'],
@@ -854,6 +855,95 @@ const groupBody = {};                      // group id -> container; other parts
   rolesReset.textContent = 'Default roles';
   rolesReset.style.cssText = 'margin:2px 0 6px';
   rolesReset.addEventListener('click', () => { DEFAULT_ROLES.forEach((r, i) => { roles[i] = r; roleSels[i].value = r; }); saveRoles(); });
+
+  // Backup: a whole setup (settings, presets, CC map, roles, options) in one JSON file
+  const clampNum = (v, min, max) => Math.min(max, Math.max(min, v));
+  function cleanLook(o) {                           // keep only known keys with valid values
+    const out = {};
+    if (!o || typeof o !== 'object') return out;
+    for (const [key, , min, max] of SPEC) if (typeof o[key] === 'number' && isFinite(o[key])) out[key] = clampNum(o[key], min, max);
+    if (typeof o.accent === 'string' && /^#[0-9a-f]{6}$/i.test(o.accent)) out.accent = o.accent.toLowerCase();
+    if (GROOVE_LABELS.some(g => g[0] === o.groove)) out.groove = o.groove;
+    if (typeof o.shape === 'string' && shapeGroups[o.shape]) out.shape = o.shape;
+    return out;
+  }
+  function buildExport() {
+    return {
+      format: 'ms-vis-settings', version: 1, exportedAt: new Date().toISOString(),
+      settings: cleanLook(cfg),
+      presets: Object.fromEntries(Object.entries(presets).map(([k, v]) => [k, cleanLook(v)])),
+      midiMap: Object.fromEntries(TARGETS.map(t => [t.id, [...midiMap[t.id]]])),
+      midiOptions: { pc: !!midiOpts.pc },
+      roles: [...roles]
+    };
+  }
+  function importData(d) {
+    if (!d || typeof d !== 'object' || d.format !== 'ms-vis-settings') throw new Error('this is not an ms-vis settings file');
+    if (d.version !== 1) throw new Error('unsupported file version');
+    const done = [];
+    if (d.settings && typeof d.settings === 'object') {
+      Object.assign(cfg, DEFAULTS, cleanLook(d.settings)); saveCfg(); refreshPanel(); done.push('settings');
+    }
+    if (d.presets && typeof d.presets === 'object') {
+      let n = 0;
+      for (let k = 1; k <= 5; k++) {
+        const pr = d.presets[k];
+        if (pr && typeof pr === 'object') { presets[k] = cleanLook(pr); n++; }
+      }
+      try { localStorage.setItem(PRESET_KEY, JSON.stringify(presets)); } catch (_) {}
+      markSlots(); done.push(`${n} preset${n === 1 ? '' : 's'}`);
+    }
+    if (d.midiMap && typeof d.midiMap === 'object') {
+      for (const t of TARGETS) {
+        if (Array.isArray(d.midiMap[t.id])) midiMap[t.id] = d.midiMap[t.id].filter(c => Number.isInteger(c) && c >= 0 && c <= 127);
+      }
+      const seen = new Set();                        // one knob drives one thing
+      for (const t of TARGETS) midiMap[t.id] = midiMap[t.id].filter(c => !seen.has(c) && seen.add(c));
+      learnTarget = null; saveMap(); renderMap(); done.push('CC map');
+    }
+    if (d.midiOptions && typeof d.midiOptions.pc === 'boolean') {
+      midiOpts.pc = d.midiOptions.pc; pcBox.checked = midiOpts.pc; saveOpts(); done.push('Program Change option');
+    }
+    if (Array.isArray(d.roles)) {
+      d.roles.slice(0, 6).forEach((v, i) => { if (ROLES.some(x => x[0] === v)) { roles[i] = v; roleSels[i].value = v; } });
+      saveRoles(); done.push('roles');
+    }
+    return done;
+  }
+  const backupInfo = document.createElement('div');
+  backupInfo.style.cssText = 'opacity:.6;margin-bottom:6px';
+  backupInfo.textContent = 'One JSON file with your settings, presets, CC map, roles and options. Importing replaces the preset slots that are in the file.';
+  const backupMsg = document.createElement('div');
+  backupMsg.style.cssText = 'opacity:.85;margin:6px 0 2px;min-height:1.4em;word-break:break-word';
+  const exportBtn = document.createElement('button');
+  exportBtn.textContent = 'Export settings';
+  exportBtn.style.marginRight = '6px';
+  exportBtn.addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify(buildExport(), null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `ms-vis-settings-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    backupMsg.textContent = 'exported to ' + a.download;
+  });
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file'; fileInput.accept = '.json,application/json'; fileInput.style.display = 'none';
+  const importBtn = document.createElement('button');
+  importBtn.textContent = 'Import settings…';
+  importBtn.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', () => {
+    const f = fileInput.files[0];
+    fileInput.value = '';
+    if (!f) return;
+    if (f.size > 200 * 1024) { backupMsg.textContent = 'import failed: file is too large'; return; }
+    f.text().then(text => {
+      const done = importData(JSON.parse(text));
+      backupMsg.textContent = 'imported: ' + (done.join(', ') || 'nothing');
+      flashStatus('settings imported');
+    }).catch(e => { backupMsg.textContent = 'import failed: ' + e.message; });
+  });
+  groupBody.backup.append(backupInfo, exportBtn, importBtn, fileInput, backupMsg);
   mapReset.addEventListener('click', () => { Object.assign(midiMap, defaultMap()); learnTarget = null; saveMap(); renderMap(); });
   groupBody.midi.append(lastMsg, statsEl,
     ...TARGETS.map(t => mapRow(t.label, t.id, () => midiMap[t.id].length ? 'CC ' + midiMap[t.id].join(' / ') : '—')),
