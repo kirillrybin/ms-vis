@@ -41,6 +41,7 @@ Press **H** to show or hide the panel in the top-right corner. It lets you adjus
 - bloom base level and range;
 - particle density, size and brightness;
 - strength of the note ripple and film grain;
+- strength of the clock beat pulse;
 - idle calm: after the chosen number of seconds without MIDI the scene gently calms down (smoother shape, softer glow, slower rotation) and wakes up instantly on the next message;
 - accent color: a color picker plus six color swatches. It recolors the rare particles, ripple crests, hi-hat sparks, rings and the UI;
 - rotation speed.
@@ -66,6 +67,20 @@ Note On velocity is taken into account. Every note also sends a ripple across th
 | 12, 13 | Delay / Reverb | Bloom intensity |
 
 CC messages are accepted from any of channels 1–6.
+
+### MIDI clock
+
+When the device sends MIDI clock, the visualizer follows the tempo:
+
+- **Scanner band:** a glowing great circle sweeps around the core once per bar, like a scanner hoop. It stands vertical on the downbeat, swings through every angle during the bar and is back at the start on the next downbeat. A short tail behind it shows the direction. The band lights up the particles and the wireframe in the accent color and fades in only while clock is arriving, so if you see it, the sync works;
+- the tempo is measured from the clock (24 pulses per quarter note) and shown in the diagnostics line of the panel;
+- every beat gives the core a pulse (about 9% bigger) and extra glow;
+- every downbeat (first beat of a bar) gives a stronger pulse and lights up the next ring in turn;
+- the rotation speed scales with the tempo (120 BPM is the reference speed);
+- **Start** resets the count to the first beat of the first bar, **Stop** freezes it, **Continue** resumes it and **Song Position** realigns the bar. If the page is opened while the sequencer is already running, the beats are counted from the moment the page started receiving clock until the next Start or Song Position, so the downbeat may be off;
+- a running sequencer also keeps the scene awake, so the idle calm does not kick in during playback.
+
+The *Clock beat pulse* slider sets the strength of the pulse and of the scanner band (0 turns both off). Test Beat is a real clock source (122 BPM) and drives the same pulse, so you can see how it works without a synth. On Elektron devices, enable clock output in the MIDI sync settings of the device if the *clock/realtime* counter in the panel stays at 0.
 
 ### Checking and remapping CCs
 
