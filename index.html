@@ -585,29 +585,32 @@ const dbPutModel = (v) => modelStore('readwrite', s => s.put(v, 'model'));
 const dbGetModel = () => modelStore('readonly', s => s.get('model'));
 const dbDelModel = () => modelStore('readwrite', s => s.delete('model'));
 
-// --- Video background: a file, a camera or a shared screen, drawn behind the core as a full-screen quad ---
-// It sits in the scene (not in the page behind the canvas), so recording, bloom, RGB shift and grain include it.
+// --- Video background: a file, a camera or a shared screen, added to the picture right after the bloom ---
+// Added after the bloom on purpose: a bright full-screen picture would be amplified by the bloom several times over.
+// The core is additive on black, so adding the video is the same as drawing it behind the core. The RGB shift, the
+// snare inversion and the grain come after it, so they apply to the video too, and so does the recording.
 const bgVideo = document.createElement('video');
 bgVideo.muted = true; bgVideo.loop = true; bgVideo.playsInline = true;
 const bgState = { on: false, tex: null, stream: null, url: null };
-const bgMat = new THREE.ShaderMaterial({
-  uniforms: { tMap: { value: null }, uOpacity: { value: 0.5 }, uCover: { value: new THREE.Vector2(1, 1) } },
-  vertexShader: /* glsl */`varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.999, 1.0); }`,
-  fragmentShader: /* glsl */`uniform sampler2D tMap; uniform float uOpacity; uniform vec2 uCover; varying vec2 vUv;
-    void main(){ vec2 uv = (vUv - 0.5) * uCover + 0.5; gl_FragColor = vec4(texture2D(tMap, uv).rgb * uOpacity, 1.0); }`,
-  depthTest: false, depthWrite: false
+const bgPass = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, tMap: { value: null }, uOpacity: { value: 0.3 }, uCover: { value: new THREE.Vector2(1, 1) } },
+  vertexShader: /* glsl */`varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`uniform sampler2D tDiffuse; uniform sampler2D tMap; uniform float uOpacity; uniform vec2 uCover; varying vec2 vUv;
+    void main(){
+      vec2 uv = (vUv - 0.5) * uCover + 0.5;
+      vec3 v = texture2D(tMap, uv).rgb;
+      gl_FragColor = vec4(texture2D(tDiffuse, vUv).rgb + v * uOpacity, 1.0);
+    }`
 });
-const bgMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bgMat);
-bgMesh.frustumCulled = false; bgMesh.renderOrder = -1000; bgMesh.visible = false;
-scene.add(bgMesh);
+bgPass.enabled = false;
 function stopBackground() {
-  bgState.on = false; bgMesh.visible = false;
+  bgState.on = false; bgPass.enabled = false;
   bgVideo.pause();
   if (bgState.stream) { bgState.stream.getTracks().forEach(t => { t.onended = null; t.stop(); }); bgState.stream = null; }
   if (bgState.url) { URL.revokeObjectURL(bgState.url); bgState.url = null; }
   bgVideo.removeAttribute('src'); bgVideo.srcObject = null; bgVideo.load();
   if (bgState.tex) { bgState.tex.dispose(); bgState.tex = null; }
-  bgMat.uniforms.tMap.value = null;
+  bgPass.uniforms.tMap.value = null;
 }
 // `attach` puts a source on the video element (a file URL or a MediaStream) and returns a label
 async function startBackground(attach, onEnded) {
@@ -616,18 +619,18 @@ async function startBackground(attach, onEnded) {
   try { await bgVideo.play(); } catch (e) { stopBackground(); throw e; }
   const tex = new THREE.VideoTexture(bgVideo);
   tex.colorSpace = THREE.NoColorSpace;                      // the shaders write raw values, like the rest of the scene
-  bgState.tex = tex; bgMat.uniforms.tMap.value = tex; bgState.on = true;
+  bgState.tex = tex; bgPass.uniforms.tMap.value = tex; bgState.on = true;
   if (bgState.stream) bgState.stream.getVideoTracks().forEach(t => { t.onended = () => { stopBackground(); onEnded(); }; });
   return label;
 }
 function updateBackground() {
   if (!bgState.on) return;
   const o = cfg.videoOpacity;
-  bgMesh.visible = o > 0 && bgVideo.videoWidth > 0;
-  bgMat.uniforms.uOpacity.value = o;
-  if (!bgMesh.visible) return;
+  bgPass.enabled = o > 0 && bgVideo.videoWidth > 0;
+  bgPass.uniforms.uOpacity.value = o;
+  if (!bgPass.enabled) return;
   const va = bgVideo.videoWidth / bgVideo.videoHeight, ra = innerWidth / innerHeight;     // crop the video to cover the screen
-  bgMat.uniforms.uCover.value.set(ra > va ? 1 : ra / va, ra > va ? va / ra : 1);
+  bgPass.uniforms.uCover.value.set(ra > va ? 1 : ra / va, ra > va ? va / ra : 1);
 }
 
 // --- Hi-hat particle pool (simulated in the vertex shader, with trails) ---
@@ -726,6 +729,7 @@ composer.setSize(innerWidth, innerHeight);
 composer.addPass(new RenderPass(scene, camera));
 const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.6, 0.55, 0.05);
 composer.addPass(bloom);
+composer.addPass(bgPass);                              // video background, see above
 const rgb = new ShaderPass(RGBShiftShader);
 rgb.uniforms.amount.value = 0.0004;
 composer.addPass(rgb);
@@ -745,7 +749,7 @@ const DEFAULTS = {
   density: 1, size: 1, bright: 1, spin: 1, auto: 1,
   ripple: 1, trail: 0.045, grain: 0.04,
   accent: '#ff5500', idle: 8, clockFx: 1, groove: 'house', shape: 'sphere',
-  videoOpacity: 0.35,
+  videoOpacity: 0.3,
   ...SHAPE_PARAM_DEFAULTS
 };
 // panel groups: [id, title, open by default]

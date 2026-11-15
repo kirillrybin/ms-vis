@@ -78,7 +78,7 @@ Sphere and Teapot have no parameters. A shape that would grow past the view is s
 
 ### Video background
 
-The *Look* group has a **Video background** row with three sources: **File…** (a local `.mp4` or `.webm`, looped and muted), **Camera** and **Screen** (a shared screen or window, for example the output of another VJ program). The picture is cropped to cover the screen and plays behind the core. It is drawn inside the scene, so the bloom, RGB shift and grain apply to it and it is part of the recording (**R**). **Video opacity** (0.35 by default) dims it so that the particles stay readable; it is a normal slider, so it is saved in presets and glides between them. A snare hit inverts the video together with the rest of the picture. **Remove** stops the source.
+The *Look* group has a **Video background** row with three sources: **File…** (a local `.mp4` or `.webm`, looped and muted), **Camera** and **Screen** (a shared screen or window, for example the output of another VJ program). The picture is cropped to cover the screen and plays behind the core. It is added to the picture right after the bloom (a bright full-screen picture would otherwise be amplified by the bloom several times), so the RGB shift, snare inversion and grain apply to it and it is part of the recording (**R**). **Video opacity** (0.3 by default) dims it so that the particles stay readable; it is a normal slider, so it is saved in presets and glides between them. A snare hit inverts the video together with the rest of the picture. **Remove** stops the source.
 
 Nothing is uploaded and the video is not saved: pick it again after a reload. Camera and screen need the browser's permission. A 1080p video is a good size; 4K together with the bloom can cost frames.
 
