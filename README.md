@@ -59,6 +59,12 @@ The core can take six shapes: **Sphere**, **Torus**, **Cube**, **Knot**, **Disc*
 
 The shape is part of a preset, like the colors and the sliders. So a Program Change from the synth, a preset key (**1–5**) or a click on a preset slot changes the whole form of the visuals, not only the tint: save a different shape into each slot and the look follows the pattern you play.
 
+### Your own model
+
+**Load model…** in the *Look* group turns an `.obj`, `.stl` or `.glb` file into a seventh shape, **Custom**. All meshes in the file are merged, centred and scaled to the same size as the other shapes, then sampled into the particle cloud. The file is only parsed as data: it may be up to 20 MB and 300,000 triangles, and a `.glb` must have its buffers embedded (textures and materials are ignored). Models over 15,000 triangles draw their wireframe as a random sample of the edges, to keep the frame rate up. **Remove** drops the model and returns to the sphere.
+
+The model is kept in this browser (IndexedDB), so it is still there after a reload. It is not part of the settings export, and a preset that uses Custom shows the sphere on a computer where no model is loaded yet.
+
 ## MIDI mapping
 
 Channels 1–6 are used, which are the Model:Samples tracks by default. The table below shows the default roles; each channel can be given any other role (see *Track roles* below).

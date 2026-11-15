@@ -100,6 +100,10 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { RGBShiftShader } from 'three/addons/shaders/RGBShiftShader.js';
 import { TeapotGeometry } from 'three/addons/geometries/TeapotGeometry.js';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 /* ------------------------------------------------------------------ */
 /* GLSL                                                                */
@@ -429,6 +433,107 @@ function setShape(id) {
   shapeState.pending = id; shapeState.t = 0;
 }
 
+// --- Custom model: an .obj / .stl / .glb file becomes one more core shape (id 'custom') ---
+// The file is only parsed as data (no scripts, no external resources) and is limited in size and triangle count.
+const MODEL_MAX_BYTES = 20 * 1024 * 1024, MODEL_MAX_TRIS = 300000, WIRE_FULL_TRIS = 15000, WIRE_SAMPLE_TRIS = 10000;
+const hashStr = (str) => { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+function collectModelGeometry(root) {            // every mesh, baked into world space, merged into one position-only geometry
+  const list = []; let tris = 0;
+  root.updateMatrixWorld(true);
+  root.traverse(o => {
+    if (!o.isMesh || !o.geometry || !o.geometry.attributes.position) return;
+    const src = o.geometry, pos = src.attributes.position;
+    tris += (src.index ? src.index.count : pos.count) / 3;
+    if (tris > MODEL_MAX_TRIS) throw new Error(`too many triangles (limit ${MODEL_MAX_TRIS.toLocaleString('en-US')})`);
+    const arr = new Float32Array(pos.count * 3), v = new THREE.Vector3();
+    for (let i = 0; i < pos.count; i++) { v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld); arr[i*3] = v.x; arr[i*3+1] = v.y; arr[i*3+2] = v.z; }
+    let g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+    if (src.index) { g.setIndex(src.index.clone()); g = g.toNonIndexed(); }
+    list.push(g);
+  });
+  if (!list.length) throw new Error('no triangle mesh found in the file');
+  const geo = list.length === 1 ? list[0] : mergeGeometries(list);
+  if (!geo) throw new Error('could not merge the meshes');
+  return geo;
+}
+async function parseModel(name, buf) {
+  const ext = name.split('.').pop().toLowerCase();
+  if (ext === 'obj') return collectModelGeometry(new OBJLoader().parse(new TextDecoder().decode(buf)));
+  if (ext === 'stl') return collectModelGeometry(new THREE.Mesh(new STLLoader().parse(buf)));
+  if (ext === 'glb') {
+    const scene = await new Promise((res, rej) => new GLTFLoader().parse(buf, '', g => res(g.scene), e => rej(new Error(e && e.message || 'invalid glb'))));
+    return collectModelGeometry(scene);
+  }
+  throw new Error('use an .obj, .stl or .glb file');
+}
+function removeCustom() {
+  const old = shapeGroups.custom;
+  if (!old) return;
+  world.remove(old);
+  old.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+  delete shapeGroups.custom;
+  if (shapeState.pending === 'custom') shapeState.pending = null;
+  if (shapeState.cur === 'custom') showShape('sphere');
+}
+async function loadCustomModel(name, buf) {      // returns the triangle count; throws a readable error
+  if (buf.byteLength > MODEL_MAX_BYTES) throw new Error('file is too large (limit 20 MB)');
+  const geo = await parseModel(name, buf);
+  geo.computeBoundingBox();
+  const bb = geo.boundingBox, sz = bb.getSize(new THREE.Vector3()), c = bb.getCenter(new THREE.Vector3());
+  const big = Math.max(sz.x, sz.y, sz.z);
+  if (!(big > 0) || !isFinite(big)) throw new Error('the model has no size');
+  geo.translate(-c.x, -c.y, -c.z).scale(...Array(3).fill(2.7 / big));
+  const tris = geo.attributes.position.count / 3;
+  const rng = mulberry32(hashStr(name));
+  const pts = sampleSurface(geo, N, rng);
+  const rnd = new Float32Array(N);
+  for (let i = 0; i < N; i++) rnd[i] = rng();
+  let wireGeo;
+  if (tris <= WIRE_FULL_TRIS) wireGeo = new THREE.WireframeGeometry(geo);
+  else {                                         // heavy model: draw the edges of a random subset of triangles
+    const w = new Float32Array(WIRE_SAMPLE_TRIS * 18), p = geo.attributes.position.array;
+    for (let k = 0; k < WIRE_SAMPLE_TRIS; k++) {
+      const t = Math.floor(rng() * tris) * 9;
+      for (let e = 0; e < 3; e++) for (let j = 0; j < 3; j++) { w[k*18 + e*6 + j] = p[t + e*3 + j]; w[k*18 + e*6 + 3 + j] = p[t + ((e + 1) % 3)*3 + j]; }
+    }
+    wireGeo = new THREE.BufferGeometry();
+    wireGeo.setAttribute('position', new THREE.BufferAttribute(w, 3));
+  }
+  geo.dispose();
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pts, 3));
+  g.setAttribute('aRand', new THREE.BufferAttribute(rnd, 1));
+  const keepVisible = shapeState.cur === 'custom';
+  removeCustom();
+  const grp = new THREE.Group();
+  grp.add(new THREE.Points(g, coreMat), new THREE.LineSegments(wireGeo, wireMat));
+  grp.visible = keepVisible;
+  world.add(grp);
+  shapeGroups.custom = grp;
+  if (keepVisible) showShape('custom');
+  return tris;
+}
+// the file is kept in IndexedDB, so the model is still there after a reload
+function modelDB() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('ms-vis', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('models');
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+}
+async function modelStore(mode, fn) {
+  const db = await modelDB();
+  return new Promise((res, rej) => {
+    const t = db.transaction('models', mode);
+    const req = fn(t.objectStore('models'));
+    t.oncomplete = () => { db.close(); res(req.result); }; t.onerror = t.onabort = () => { db.close(); rej(t.error); };
+  });
+}
+const dbPutModel = (v) => modelStore('readwrite', s => s.put(v, 'model'));
+const dbGetModel = () => modelStore('readonly', s => s.get('model'));
+const dbDelModel = () => modelStore('readwrite', s => s.delete('model'));
+
 // --- Hi-hat particle pool (simulated in the vertex shader, with trails) ---
 const HAT_MAX = 900;
 const HAT_SLOTS = HAT_MAX * HAT_TRAIL;     // each particle owns HAT_TRAIL vertices
@@ -585,8 +690,8 @@ const STORE_KEY = 'ms-vis-settings-v1';
 const cfg = { ...DEFAULTS };
 try { Object.assign(cfg, JSON.parse(localStorage.getItem(STORE_KEY) || '{}')); } catch (_) {}
 function saveCfg() { try { localStorage.setItem(STORE_KEY, JSON.stringify(cfg)); } catch (_) {} }
-if (!shapeGroups[cfg.shape]) cfg.shape = 'sphere';
-showShape(cfg.shape);                                  // the saved shape appears at once, without the transition
+if (cfg.shape !== 'custom' && !shapeGroups[cfg.shape]) cfg.shape = 'sphere';   // 'custom' stays saved while the model is still loading
+showShape(shapeGroups[cfg.shape] ? cfg.shape : 'sphere');                                  // the saved shape appears at once, without the transition
 
 // MIDI CC mapping lives apart from the look settings, so presets never change it.
 // Every target can be bound to any CC with Learn. `v` is the 0..1 value of the knob.
@@ -765,9 +870,51 @@ const groupBody = {};                      // group id -> container; other parts
   for (const [id, label] of SHAPE_LABELS) {
     const o = document.createElement('option'); o.value = id; o.textContent = label; shapeSel.appendChild(o);
   }
+  const customOpt = document.createElement('option');
+  customOpt.value = 'custom'; customOpt.textContent = 'Custom (none loaded)'; customOpt.disabled = true;
+  shapeSel.appendChild(customOpt);
   shapeSel.value = cfg.shape;
   shapeSel.addEventListener('change', () => { cfg.shape = shapeSel.value; saveCfg(); setShape(cfg.shape); });
-  groupBody.look.append(shapeLabel, shapeSel, accRow, swatches);
+  // custom model: load / remove, with a status line
+  const modelFile = document.createElement('input');
+  modelFile.type = 'file'; modelFile.accept = '.obj,.stl,.glb'; modelFile.style.display = 'none';
+  const modelBtn = document.createElement('button'); modelBtn.textContent = 'Load model…'; modelBtn.style.marginRight = '6px';
+  const modelDel = document.createElement('button'); modelDel.textContent = 'Remove'; modelDel.disabled = true;
+  const modelMsg = document.createElement('div');
+  modelMsg.style.cssText = 'opacity:.7;margin:4px 0 6px;min-height:1.4em;word-break:break-word';
+  modelMsg.textContent = '.obj, .stl or .glb, up to 20 MB. The model stays in this browser only, it is not part of the settings export.';
+  modelBtn.addEventListener('click', () => modelFile.click());
+  async function useModel(name, buf, fresh) {
+    modelMsg.textContent = 'loading…';
+    await new Promise(r => setTimeout(r, 30));
+    try {
+      const tris = await loadCustomModel(name, buf);
+      customOpt.disabled = false; customOpt.textContent = `Custom (${name.length > 24 ? name.slice(0, 21) + '…' : name})`;
+      modelDel.disabled = false;
+      modelMsg.textContent = `${name}: ${tris.toLocaleString('en-US')} triangles` + (tris > WIRE_FULL_TRIS ? ' (wireframe is a sample)' : '');
+      if (fresh) { cfg.shape = 'custom'; saveCfg(); shapeSel.value = 'custom'; setShape('custom'); }
+      else if (cfg.shape === 'custom') { showShape('custom'); shapeSel.value = 'custom'; }
+      return true;
+    } catch (e) { modelMsg.textContent = 'could not load: ' + e.message; return false; }
+  }
+  modelFile.addEventListener('change', async () => {
+    const f = modelFile.files[0]; modelFile.value = '';
+    if (!f) return;
+    if (f.size > MODEL_MAX_BYTES) { modelMsg.textContent = 'could not load: file is too large (limit 20 MB)'; return; }
+    const buf = await f.arrayBuffer();
+    if (await useModel(f.name, buf, true)) {
+      try { await dbPutModel({ name: f.name, buf }); } catch (_) { modelMsg.textContent += ' · could not be kept for the next visit'; }
+    }
+  });
+  modelDel.addEventListener('click', async () => {
+    removeCustom();
+    customOpt.disabled = true; customOpt.textContent = 'Custom (none loaded)'; modelDel.disabled = true;
+    if (cfg.shape === 'custom') { cfg.shape = 'sphere'; saveCfg(); shapeSel.value = 'sphere'; }
+    modelMsg.textContent = 'model removed';
+    try { await dbDelModel(); } catch (_) {}
+  });
+  dbGetModel().then(m => { if (m && m.name && m.buf instanceof ArrayBuffer) useModel(m.name, m.buf, false); }).catch(() => {});
+  groupBody.look.append(shapeLabel, shapeSel, modelBtn, modelDel, modelFile, modelMsg, accRow, swatches);
   setAccent(cfg.accent);
 
   // Test beat groove
@@ -927,7 +1074,7 @@ const groupBody = {};                      // group id -> container; other parts
     for (const [key, , min, max] of SPEC) if (typeof o[key] === 'number' && isFinite(o[key])) out[key] = clampNum(o[key], min, max);
     if (typeof o.accent === 'string' && /^#[0-9a-f]{6}$/i.test(o.accent)) out.accent = o.accent.toLowerCase();
     if (GROOVE_LABELS.some(g => g[0] === o.groove)) out.groove = o.groove;
-    if (typeof o.shape === 'string' && shapeGroups[o.shape]) out.shape = o.shape;
+    if (typeof o.shape === 'string' && (shapeGroups[o.shape] || o.shape === 'custom')) out.shape = o.shape;
     return out;
   }
   function buildExport() {
