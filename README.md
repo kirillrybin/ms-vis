@@ -35,9 +35,10 @@ Press **H** to show or hide the panel in the top-right corner. It lets you adjus
 - kick and snare sensitivity and decay speed;
 - camera zoom on kick;
 - maximum RGB shift on snare;
-- number of hi-hat particles;
+- number of hi-hat particles and the length of their trails;
 - bloom base level and range;
 - particle density, size and brightness;
+- film grain;
 - rotation speed.
 
 Values are saved in the browser's `localStorage`. The **Reset** button restores the defaults.
@@ -66,6 +67,8 @@ CC messages are accepted from any of channels 1–6.
 
 - **Core:** 36,000 particles (`Points`) on a Fibonacci sphere plus a wireframe icosphere (`LineSegments`). Both are deformed in the vertex shader by 3D simplex noise.
 - **Hi-hats:** a pool of 900 particles whose motion is computed entirely in the vertex shader. The CPU only writes spawn data when a hat is hit.
+- **Trails:** every hi-hat particle is drawn as a head plus 4 fading samples, all computed in the shader from the same spawn data.
+- **Film grain:** a final full-screen pass adds subtle noise, strongest in the mid-tones, and leaves pure black clean.
 - **Auto quality:** if FPS stays below 45, particle density is lowered (and, as a last resort, the pixel ratio drops to 1); it recovers slowly when FPS is stable. The current FPS and quality level are shown in the settings panel title. It can be switched off with the "Auto quality" slider.
 - **Post-processing:** `EffectComposer` with `UnrealBloomPass`, `RGBShiftShader` and a custom inversion pass.
 - **All code** (HTML, CSS, JS, GLSL) lives in a single `index.html` file.
