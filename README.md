@@ -69,7 +69,11 @@ CC messages are accepted from any of channels 1–6.
 
 ### Checking and remapping CCs
 
-Open the settings panel (**H**). The **MIDI** block shows the last message received, for example `ch2 CC 74 = 100`, including messages that are not mapped to anything and messages from channels above 6 (those are marked as ignored). If the knob you turn does not appear there, the visualizer is not receiving it at all: check the selected MIDI input and the MIDI settings of the device. Some Elektron devices can send parameter changes as NRPN instead of plain CC, which this visualizer does not read.
+Open the settings panel (**H**). The **MIDI** block shows the last message received, for example `ch2 CC 74 = 100`, including messages that are not mapped to anything and messages from channels above 6 (those are marked as ignored). Under it, a status line lists the MIDI inputs found, the one(s) being listened to and two counters: *messages* (notes, CC, pitch bend) and *clock/realtime* (MIDI clock and similar). Use them to find where the signal stops:
+
+- *clock/realtime* grows but *messages* does not move when you turn a knob or play a pad: the device is connected but is not sending those messages. Check its MIDI output settings (for example which parameters or which port it sends to).
+- both counters stay at 0: nothing reaches the browser from the selected input. Pick another input, or choose **All inputs** in the selector in the top-left corner (it appears when more than one input exists), and check the cable, the USB connection and the device's MIDI port settings.
+- *messages* grows but nothing happens on screen: the message is probably on a channel above 6 or a CC that is not mapped, see the last message above. Some Elektron devices can send parameter changes as NRPN instead of plain CC, which this visualizer does not read.
 
 If the knob appears with a different CC number than the defaults, press **Learn** next to *Cutoff CC* or *Bloom CC*, then turn the knob on the device. That CC is bound immediately and remembered. **Default CCs** restores 74 for the cutoff and 12 / 13 for the bloom. The mapping is stored separately from the presets, so loading a preset never changes it.
 

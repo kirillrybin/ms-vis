@@ -495,6 +495,7 @@ try {
 } catch (_) {}
 function saveMap() { try { localStorage.setItem(MAP_KEY, JSON.stringify(midiMap)); } catch (_) {} }
 let learnTarget = null;                 // 'cutoff' | 'bloom' | null
+const midiStats = { inputs: [], port: '—', ch: 0, rt: 0 };   // connection diagnostics shown in the panel
 let onMapChange = () => {}, onLastMsg = () => {};
 
 const panel = document.getElementById('panel');
@@ -558,6 +559,13 @@ const sliderEls = {};
   lastMsg.style.cssText = 'opacity:.75;margin-bottom:6px;min-height:1.4em;word-break:break-all';
   lastMsg.textContent = 'last message: none yet';
   onLastMsg = (text) => { lastMsg.textContent = 'last message: ' + text; };
+  const statsEl = document.createElement('div');
+  statsEl.style.cssText = 'opacity:.55;margin-bottom:6px;word-break:break-all';
+  setInterval(() => {
+    if (!panel.classList.contains('open')) return;
+    statsEl.textContent = `inputs: ${midiStats.inputs.join(', ') || 'none'} · listening: ${midiStats.port} · ` +
+      `messages: ${midiStats.ch} · clock/realtime: ${midiStats.rt}`;
+  }, 400);
   const mapRows = [];
   function mapRow(label, target, valueText) {
     const row = document.createElement('div');
@@ -581,7 +589,7 @@ const sliderEls = {};
   mapReset.textContent = 'Default CCs';
   mapReset.style.cssText = 'margin:2px 0 10px';
   mapReset.addEventListener('click', () => { midiMap.cutoff = 74; midiMap.bloom = [12, 13]; learnTarget = null; saveMap(); renderMap(); });
-  panel.append(midiHead, lastMsg,
+  panel.append(midiHead, lastMsg, statsEl,
     mapRow('Cutoff CC (noise)', 'cutoff', () => 'CC ' + midiMap.cutoff),
     mapRow('Bloom CC (glow)', 'bloom', () => 'CC ' + (midiMap.bloom.join(' / ') || '—')),
     mapReset);
@@ -730,24 +738,32 @@ function handleMIDI(data) {
 /* ------------------------------------------------------------------ */
 const box = document.getElementById('midi-box');
 const select = document.getElementById('midi-select');
-let midi = null, hideTimer = 0, currentInput = null;
+let midi = null, hideTimer = 0;
 
 function scheduleHide() {
   clearTimeout(hideTimer);
   hideTimer = setTimeout(() => box.classList.add('hidden'), 3000);
 }
+let boundInputs = [];
 function bindInput(id) {
-  if (currentInput) currentInput.onmidimessage = null;
-  currentInput = null;
+  for (const i of boundInputs) i.onmidimessage = null;
+  boundInputs = [];
+  midiStats.ch = 0; midiStats.rt = 0; midiStats.port = '—';
   if (!midi || !id) return;
-  const inp = midi.inputs.get(id);
-  if (!inp) return;
-  inp.onmidimessage = (e) => handleMIDI(e.data);
-  currentInput = inp;
+  const list = id === '__all' ? [...midi.inputs.values()] : [midi.inputs.get(id)].filter(Boolean);
+  for (const inp of list) {
+    inp.onmidimessage = (e) => {
+      if (e.data[0] >= 0xf0) midiStats.rt++; else midiStats.ch++;
+      handleMIDI(e.data);
+    };
+    boundInputs.push(inp);
+  }
+  midiStats.port = list.map(i => i.name || i.id).join(', ') || '—';
 }
 function refreshInputs() {
   const prev = select.value;
   const inputs = [...midi.inputs.values()];
+  midiStats.inputs = inputs.map(i => i.name || i.id);
   select.innerHTML = '';
   if (!inputs.length) {
     select.innerHTML = '<option value="">no MIDI input — use Test Beat</option>';
@@ -755,12 +771,17 @@ function refreshInputs() {
     bindInput(null);
     return;
   }
+  if (inputs.length > 1) {
+    const o = document.createElement('option');
+    o.value = '__all'; o.textContent = 'All inputs';
+    select.appendChild(o);
+  }
   for (const i of inputs) {
     const o = document.createElement('option');
     o.value = i.id; o.textContent = i.name || i.id;
     select.appendChild(o);
   }
-  const keep = inputs.find(i => i.id === prev);
+  const keep = (prev === '__all' && inputs.length > 1) ? { id: '__all' } : inputs.find(i => i.id === prev);
   const pick = keep || inputs.find(i => /model|elektron/i.test(i.name || '')) || inputs[0];
   select.value = pick.id;
   bindInput(pick.id);
