@@ -585,6 +585,51 @@ const dbPutModel = (v) => modelStore('readwrite', s => s.put(v, 'model'));
 const dbGetModel = () => modelStore('readonly', s => s.get('model'));
 const dbDelModel = () => modelStore('readwrite', s => s.delete('model'));
 
+// --- Video background: a file, a camera or a shared screen, drawn behind the core as a full-screen quad ---
+// It sits in the scene (not in the page behind the canvas), so recording, bloom, RGB shift and grain include it.
+const bgVideo = document.createElement('video');
+bgVideo.muted = true; bgVideo.loop = true; bgVideo.playsInline = true;
+const bgState = { on: false, tex: null, stream: null, url: null };
+const bgMat = new THREE.ShaderMaterial({
+  uniforms: { tMap: { value: null }, uOpacity: { value: 0.5 }, uCover: { value: new THREE.Vector2(1, 1) } },
+  vertexShader: /* glsl */`varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.999, 1.0); }`,
+  fragmentShader: /* glsl */`uniform sampler2D tMap; uniform float uOpacity; uniform vec2 uCover; varying vec2 vUv;
+    void main(){ vec2 uv = (vUv - 0.5) * uCover + 0.5; gl_FragColor = vec4(texture2D(tMap, uv).rgb * uOpacity, 1.0); }`,
+  depthTest: false, depthWrite: false
+});
+const bgMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bgMat);
+bgMesh.frustumCulled = false; bgMesh.renderOrder = -1000; bgMesh.visible = false;
+scene.add(bgMesh);
+function stopBackground() {
+  bgState.on = false; bgMesh.visible = false;
+  bgVideo.pause();
+  if (bgState.stream) { bgState.stream.getTracks().forEach(t => { t.onended = null; t.stop(); }); bgState.stream = null; }
+  if (bgState.url) { URL.revokeObjectURL(bgState.url); bgState.url = null; }
+  bgVideo.removeAttribute('src'); bgVideo.srcObject = null; bgVideo.load();
+  if (bgState.tex) { bgState.tex.dispose(); bgState.tex = null; }
+  bgMat.uniforms.tMap.value = null;
+}
+// `attach` puts a source on the video element (a file URL or a MediaStream) and returns a label
+async function startBackground(attach, onEnded) {
+  stopBackground();
+  const label = await attach();
+  try { await bgVideo.play(); } catch (e) { stopBackground(); throw e; }
+  const tex = new THREE.VideoTexture(bgVideo);
+  tex.colorSpace = THREE.NoColorSpace;                      // the shaders write raw values, like the rest of the scene
+  bgState.tex = tex; bgMat.uniforms.tMap.value = tex; bgState.on = true;
+  if (bgState.stream) bgState.stream.getVideoTracks().forEach(t => { t.onended = () => { stopBackground(); onEnded(); }; });
+  return label;
+}
+function updateBackground() {
+  if (!bgState.on) return;
+  const o = cfg.videoOpacity;
+  bgMesh.visible = o > 0 && bgVideo.videoWidth > 0;
+  bgMat.uniforms.uOpacity.value = o;
+  if (!bgMesh.visible) return;
+  const va = bgVideo.videoWidth / bgVideo.videoHeight, ra = innerWidth / innerHeight;     // crop the video to cover the screen
+  bgMat.uniforms.uCover.value.set(ra > va ? 1 : ra / va, ra > va ? va / ra : 1);
+}
+
 // --- Hi-hat particle pool (simulated in the vertex shader, with trails) ---
 const HAT_MAX = 900;
 const HAT_SLOTS = HAT_MAX * HAT_TRAIL;     // each particle owns HAT_TRAIL vertices
@@ -700,6 +745,7 @@ const DEFAULTS = {
   density: 1, size: 1, bright: 1, spin: 1, auto: 1,
   ripple: 1, trail: 0.045, grain: 0.04,
   accent: '#ff5500', idle: 8, clockFx: 1, groove: 'house', shape: 'sphere',
+  videoOpacity: 0.35,
   ...SHAPE_PARAM_DEFAULTS
 };
 // panel groups: [id, title, open by default]
@@ -734,6 +780,7 @@ const SPEC = [
   ['trail',     'Hi-hat trail', 0, 0.1, 0.005, 'look'],
   ['grain',     'Film grain', 0, 0.2, 0.005, 'look'],
   ['spin',      'Rotation speed', 0, 4, 0.05, 'look'],
+  ['videoOpacity', 'Video opacity', 0, 1, 0.01, 'look'],
   ['torusR',    'Torus radius', 0.4, 1, 0.01, 'look', 'torus'],
   ['torusTube', 'Torus tube', 0.08, 0.5, 0.01, 'look', 'torus'],
   ['knotP',     'Knot windings P', 1, 7, 1, 'look', 'knot'],
@@ -1027,6 +1074,48 @@ const groupBody = {};                      // group id -> container; other parts
     modelMsg.textContent = 'model removed';
     try { await dbDelModel(); } catch (_) {}
   });
+  // video background
+  const vidLabel = document.createElement('div');
+  vidLabel.style.cssText = 'opacity:.85;margin:8px 0 4px';
+  vidLabel.textContent = 'Video background (not saved)';
+  const vidFile = document.createElement('input');
+  vidFile.type = 'file'; vidFile.accept = 'video/*'; vidFile.style.display = 'none';
+  const vidMsg = document.createElement('div');
+  vidMsg.style.cssText = 'opacity:.7;margin:4px 0 6px;min-height:1.4em;word-break:break-word';
+  vidMsg.textContent = 'A file, the camera or a shared screen plays behind the core. Use Video opacity to dim it.';
+  const vidBtn = (text, fn) => {
+    const b = document.createElement('button'); b.textContent = text; b.style.marginRight = '6px';
+    b.addEventListener('click', fn); return b;
+  };
+  const vidRun = async (attach) => {
+    vidMsg.textContent = 'starting…';
+    try {
+      const label = await startBackground(attach, () => { vidMsg.textContent = 'the video source ended'; vidDel.disabled = true; });
+      vidMsg.textContent = label; vidDel.disabled = false;
+      if (cfg.videoOpacity === 0) { cfg.videoOpacity = DEFAULTS.videoOpacity; sliderEls.videoOpacity[0].value = cfg.videoOpacity; sliderEls.videoOpacity[1](); saveCfg(); }
+    } catch (e) { vidMsg.textContent = 'could not start: ' + (e && e.message || e.name || e); vidDel.disabled = !bgState.on; }
+  };
+  const vidDel = vidBtn('Remove', () => { stopBackground(); vidDel.disabled = true; vidMsg.textContent = 'video removed'; });
+  vidDel.disabled = true;
+  vidFile.addEventListener('change', () => {
+    const f = vidFile.files[0]; vidFile.value = '';
+    if (!f) return;
+    if (!f.type.startsWith('video/')) { vidMsg.textContent = 'could not start: not a video file'; return; }
+    vidRun(async () => { bgState.url = URL.createObjectURL(f); bgVideo.src = bgState.url; return f.name; });
+  });
+  const vidRow = document.createElement('div');
+  vidRow.append(
+    vidBtn('File…', () => vidFile.click()),
+    vidBtn('Camera', () => vidRun(async () => {
+      bgState.stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 } }, audio: false });
+      bgVideo.srcObject = bgState.stream; return 'camera';
+    })),
+    vidBtn('Screen', () => vidRun(async () => {
+      bgState.stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      bgVideo.srcObject = bgState.stream; return 'shared screen';
+    })),
+    vidDel, vidFile);
+  groupBody.look.append(vidLabel, vidRow, vidMsg);
   dbGetModel().then(m => { if (m && m.name && m.buf instanceof ArrayBuffer) useModel(m.name, m.buf, false); }).catch(() => {});
   groupBody.look.append(shapeLabel, shapeSel, paramBox, modelBtn, modelDel, modelFile, modelMsg, accRow, swatches);
   setAccent(cfg.accent);
@@ -1785,6 +1874,7 @@ function frame() {
   const now = performance.now();
   shared.uTime.value += dt;
   presetTick(dt);
+  updateBackground();
 
   // envelopes
   S.kick  *= Math.exp(-dt * cfg.kickDecay);

@@ -76,6 +76,12 @@ Under the shape selector in the *Look* group, the sliders of the selected shape 
 
 Sphere and Teapot have no parameters. A shape that would grow past the view is scaled down to fit.
 
+### Video background
+
+The *Look* group has a **Video background** row with three sources: **File…** (a local `.mp4` or `.webm`, looped and muted), **Camera** and **Screen** (a shared screen or window, for example the output of another VJ program). The picture is cropped to cover the screen and plays behind the core. It is drawn inside the scene, so the bloom, RGB shift and grain apply to it and it is part of the recording (**R**). **Video opacity** (0.35 by default) dims it so that the particles stay readable; it is a normal slider, so it is saved in presets and glides between them. A snare hit inverts the video together with the rest of the picture. **Remove** stops the source.
+
+Nothing is uploaded and the video is not saved: pick it again after a reload. Camera and screen need the browser's permission. A 1080p video is a good size; 4K together with the bloom can cost frames.
+
 ### Your own model
 
 **Load model…** in the *Look* group turns an `.obj`, `.stl` or `.glb` file into a seventh shape, **Custom**. All meshes in the file are merged, centred and scaled to the same size as the other shapes, then sampled into the particle cloud. The file is only parsed as data: it may be up to 20 MB and 300,000 triangles, and a `.glb` must have its buffers embedded (textures and materials are ignored). Models over 15,000 triangles draw their wireframe as a random sample of the edges, to keep the frame rate up. **Remove** drops the model and returns to the sphere.
