@@ -626,6 +626,21 @@ const OPTS_KEY = 'ms-vis-midiopts-v1';
 const midiOpts = { pc: true };                       // Program Change selects a preset
 try { Object.assign(midiOpts, JSON.parse(localStorage.getItem(OPTS_KEY) || '{}')); } catch (_) {}
 function saveOpts() { try { localStorage.setItem(OPTS_KEY, JSON.stringify(midiOpts)); } catch (_) {} }
+// Program Change map: program number (0-127) -> preset slot (1-5). Empty = the old "repeat every 5" mode.
+const PROG_KEY = 'ms-vis-programmap-v1';
+const cleanProgMap = (o) => {
+  const out = {};
+  if (o && typeof o === 'object') for (const [k, v] of Object.entries(o)) {
+    const n = Number(k);
+    if (Number.isInteger(n) && n >= 0 && n <= 127 && Number.isInteger(v) && v >= 1 && v <= 5) out[n] = v;
+  }
+  return out;
+};
+let programMap = {};
+try { programMap = cleanProgMap(JSON.parse(localStorage.getItem(PROG_KEY) || '{}')); } catch (_) {}
+function saveProgMap() { try { localStorage.setItem(PROG_KEY, JSON.stringify(programMap)); } catch (_) {} }
+let learnSlot = 0;                      // preset slot (1-5) waiting for a Program Change, or 0
+let onProgChange = () => {};
 // Track roles: what each MIDI channel (1-6) makes the visuals do. Stored apart from the presets.
 const ROLES = [['kick', 'Kick'], ['snare', 'Snare'], ['hat', 'Hi-hat'], ['ring1', 'Ring 1'], ['ring2', 'Ring 2'], ['ring3', 'Ring 3'], ['none', 'Ignore']];
 const DEFAULT_ROLES = ['kick', 'snare', 'hat', 'ring1', 'ring2', 'ring3'];
@@ -834,6 +849,44 @@ const groupBody = {};                      // group id -> container; other parts
   const mapReset = document.createElement('button');
   mapReset.textContent = 'Default CCs';
   mapReset.style.cssText = 'margin:2px 0 6px';
+  const progRows = [];
+  const progBox = document.createElement('div');
+  progBox.style.cssText = 'margin:4px 0 8px';
+  const progNote = document.createElement('div');
+  progNote.style.cssText = 'opacity:.6;margin-bottom:4px';
+  for (let slot = 1; slot <= 5; slot++) {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:5px';
+    const name = document.createElement('span'); name.style.cssText = 'flex:1;opacity:.85'; name.textContent = 'Slot ' + slot;
+    const val = document.createElement('span'); val.style.cssText = 'opacity:.7';
+    const btn = document.createElement('button'); btn.style.cssText = 'margin:0;padding:2px 8px';
+    btn.addEventListener('click', () => { learnSlot = learnSlot === slot ? 0 : slot; renderProg(); });
+    const clr = document.createElement('button'); clr.textContent = '×'; clr.title = 'unassign'; clr.style.cssText = 'margin:0;padding:2px 6px';
+    clr.addEventListener('click', () => {
+      for (const k of Object.keys(programMap)) if (programMap[k] === slot) delete programMap[k];
+      if (learnSlot === slot) learnSlot = 0;
+      saveProgMap(); renderProg();
+    });
+    row.append(name, val, btn, clr);
+    progRows.push({ slot, val, btn });
+    progBox.append(row);
+  }
+  const progClear = document.createElement('button');
+  progClear.textContent = 'Clear map';
+  progClear.style.cssText = 'margin:2px 0 0';
+  progClear.addEventListener('click', () => { programMap = {}; learnSlot = 0; saveProgMap(); renderProg(); });
+  progBox.prepend(progNote); progBox.append(progClear);
+  function renderProg() {
+    const has = Object.keys(programMap).length > 0;
+    progNote.textContent = has ? 'Only the programs below switch presets; any other program is ignored.'
+      : 'Map is empty: programs repeat over the slots (0 → 1 … 4 → 5, 5 → 1). Learn a program to take control.';
+    for (const r of progRows) {
+      const progs = Object.keys(programMap).filter(k => programMap[k] === r.slot).sort((a, b) => a - b);
+      r.val.textContent = progs.length ? 'program ' + progs.join(' / ') : '—';
+      r.btn.textContent = learnSlot === r.slot ? 'change pattern…' : 'Learn';
+    }
+  }
+  onProgChange = renderProg;
   const pcRow = document.createElement('div');
   pcRow.style.cssText = 'display:flex;align-items:flex-start;gap:6px;margin:6px 0 4px;opacity:.85';
   const pcBox = document.createElement('input');
@@ -884,6 +937,7 @@ const groupBody = {};                      // group id -> container; other parts
       presets: Object.fromEntries(Object.entries(presets).map(([k, v]) => [k, cleanLook(v)])),
       midiMap: Object.fromEntries(TARGETS.map(t => [t.id, [...midiMap[t.id]]])),
       midiOptions: { pc: !!midiOpts.pc },
+      programMap: { ...programMap },
       roles: [...roles]
     };
   }
@@ -913,6 +967,9 @@ const groupBody = {};                      // group id -> container; other parts
     }
     if (d.midiOptions && typeof d.midiOptions.pc === 'boolean') {
       midiOpts.pc = d.midiOptions.pc; pcBox.checked = midiOpts.pc; saveOpts(); done.push('Program Change option');
+    }
+    if (d.programMap && typeof d.programMap === 'object') {
+      programMap = cleanProgMap(d.programMap); learnSlot = 0; saveProgMap(); renderProg(); done.push('Program Change map');
     }
     if (Array.isArray(d.roles)) {
       d.roles.slice(0, 6).forEach((v, i) => { if (ROLES.some(x => x[0] === v)) { roles[i] = v; roleSels[i].value = v; } });
@@ -957,8 +1014,8 @@ const groupBody = {};                      // group id -> container; other parts
   mapReset.addEventListener('click', () => { Object.assign(midiMap, defaultMap()); learnTarget = null; saveMap(); renderMap(); });
   groupBody.midi.append(lastMsg, statsEl,
     ...TARGETS.map(t => mapRow(t.label, t.id, () => midiMap[t.id].length ? 'CC ' + midiMap[t.id].join(' / ') : '—')),
-    mapReset, pcRow, rolesHead, rolesGrid, rolesReset);
-  renderMap();
+    mapReset, pcRow, progBox, rolesHead, rolesGrid, rolesReset);
+  renderMap(); renderProg();
 
   const reset = document.createElement('button');
   reset.textContent = 'Reset all settings';
@@ -1109,7 +1166,16 @@ function handleMIDI(data, ts = performance.now()) {
   }
   if (type === 0xc0) {                                  // Program Change: picks a preset slot, from any channel
     S.lastMidi = performance.now();
-    if (midiOpts.pc) applyPreset((data[1] % 5) + 1, `program ${data[1]}`);
+    if (learnSlot) {                                    // Program Change learn: bind the pattern that was just selected
+      for (const k of Object.keys(programMap)) if (programMap[k] === learnSlot) delete programMap[k];   // one program per slot
+      programMap[data[1]] = learnSlot;
+      learnSlot = 0; saveProgMap(); onProgChange();
+      return;
+    }
+    if (!midiOpts.pc) return;
+    if (Object.keys(programMap).length) {               // explicit map: unmapped programs are ignored
+      if (programMap[data[1]]) applyPreset(programMap[data[1]], `program ${data[1]}`);
+    } else applyPreset((data[1] % 5) + 1, `program ${data[1]}`);
     return;
   }
   if (ch > 5) return;                                   // channels 1–6 only

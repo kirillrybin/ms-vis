@@ -48,7 +48,7 @@ Values are saved in the browser's `localStorage`. **Reset all settings** at the 
 
 Everything is stored in the browser's `localStorage`, so it lives in one browser on one computer. The *Backup* group of the settings panel moves it around:
 
-- **Export settings** downloads `ms-vis-settings-<date>.json` with the current look settings, the five preset slots (shapes included), the CC mapping, the track roles and the Program Change option;
+- **Export settings** downloads `ms-vis-settings-<date>.json` with the current look settings, the five preset slots (shapes included), the CC mapping, the track roles and the Program Change option and map;
 - **Import settings…** reads such a file back. Presets in the file replace the slots with the same number; slots that are not in the file stay as they are. The panel tells you what was imported.
 
 The importer only accepts files that were made by this app (`"format": "ms-vis-settings"`), refuses files over 200 KB and checks every value: numbers are clamped to the range of their slider, colors, shapes, grooves and roles must be known values, CC numbers must be integers from 0 to 127, and anything unknown is ignored. A broken or hostile file cannot put the app into a bad state, it can only fail with a message.
@@ -94,7 +94,9 @@ Several channels may share a role, for example two kick tracks. Every channel th
 
 ### Program Change
 
-A Program Change message switches the look to a preset slot, so the visuals can follow the pattern or project you play on the synth. The program number picks the slot: 0 → slot 1, 1 → slot 2, … 4 → slot 5, and then it repeats (5 → slot 1, 6 → slot 2, and so on). It works on any channel. If the slot is empty nothing changes and the status line says so. Save your looks into the slots first (Shift+**1–5**).
+A Program Change message switches the look to a preset slot, so the visuals can follow the pattern or project you play on the synth. It works on any channel. By default the program number picks the slot and repeats: 0 → slot 1, 1 → slot 2, … 4 → slot 5, 5 → slot 1, and so on.
+
+To choose the numbers yourself, use the **Slot 1–5** rows under the checkbox in the *MIDI & clock* group: press **Learn** next to a slot, then change a pattern on the synth, and the program it sends is bound to that slot (a program belongs to one slot; **×** unassigns a slot, **Clear map** empties the table). Once at least one program is mapped, every program that is not in the table is ignored; with an empty table the default repeating mode is back. The map is stored apart from the presets and is included in the settings export. If the slot is empty nothing changes and the status line says so. Save your looks into the slots first (Shift+**1–5**).
 
 The checkbox in the *MIDI & clock* group turns this off (it is on by default). The setting is stored apart from the presets, so loading a preset never changes it. To see what your device sends when you change a pattern, look at the MIDI log in the same group: a Program Change shows up as `ch1 program 3`. If nothing appears, check the device's MIDI settings for sending Program Change.
 
