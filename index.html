@@ -555,7 +555,12 @@ const midiStats = { inputs: [], port: '—', ch: 0, rt: 0 };
 // MIDI clock: 24 pulses per quarter note, aligned by Start / Song Position
 const CLK = { tick: 0, bar: 0, running: null, times: [], bpm: 0, lastTick: 0 };   // running: null = unknown, treated as running
 const clockAlive = (now) => CLK.running !== false && CLK.bpm > 0 && now - CLK.lastTick < 400;   // connection diagnostics shown in the panel
-let onMapChange = () => {}, onLastMsg = () => {};
+// MIDI options, stored apart from the look settings so that loading a preset never changes them
+const OPTS_KEY = 'ms-vis-midiopts-v1';
+const midiOpts = { pc: true };                       // Program Change selects a preset
+try { Object.assign(midiOpts, JSON.parse(localStorage.getItem(OPTS_KEY) || '{}')); } catch (_) {}
+function saveOpts() { try { localStorage.setItem(OPTS_KEY, JSON.stringify(midiOpts)); } catch (_) {} }
+let onMapChange = () => {}, onLastMsg = () => {}, applyPreset = () => {};
 
 const panel = document.getElementById('panel');
 const sliderEls = {};
@@ -585,6 +590,12 @@ const groupBody = {};                      // group id -> container; other parts
     try { localStorage.setItem(PRESET_KEY, JSON.stringify(presets)); } catch (_) {}
     markSlots(); flashStatus(`preset ${n} saved`);
   }
+  applyPreset = (n, why) => {                       // used by MIDI Program Change
+    const pr = presets[n];
+    if (!pr) { flashStatus(`${why}: preset ${n} is empty`); return; }
+    Object.assign(cfg, DEFAULTS, pr); saveCfg(); refreshPanel();
+    flashStatus(`${why} → preset ${n}`);
+  };
   for (let n = 1; n <= 5; n++) {
     const b = document.createElement('button');
     b.textContent = n;
@@ -714,10 +725,18 @@ const groupBody = {};                      // group id -> container; other parts
   const mapReset = document.createElement('button');
   mapReset.textContent = 'Default CCs';
   mapReset.style.cssText = 'margin:2px 0 6px';
+  const pcRow = document.createElement('div');
+  pcRow.style.cssText = 'display:flex;align-items:flex-start;gap:6px;margin:6px 0 4px;opacity:.85';
+  const pcBox = document.createElement('input');
+  pcBox.type = 'checkbox'; pcBox.checked = midiOpts.pc; pcBox.style.cssText = 'margin:2px 0 0;accent-color:var(--accent)';
+  pcBox.addEventListener('change', () => { midiOpts.pc = pcBox.checked; saveOpts(); });
+  const pcText = document.createElement('span');
+  pcText.textContent = 'Program Change selects a preset: program 0 → slot 1 … 4 → slot 5, then it repeats (5 → slot 1)';
+  pcRow.append(pcBox, pcText);
   mapReset.addEventListener('click', () => { Object.assign(midiMap, defaultMap()); learnTarget = null; saveMap(); renderMap(); });
   groupBody.midi.append(lastMsg, statsEl,
     ...TARGETS.map(t => mapRow(t.label, t.id, () => midiMap[t.id].length ? 'CC ' + midiMap[t.id].join(' / ') : '—')),
-    mapReset);
+    mapReset, pcRow);
   renderMap();
 
   const reset = document.createElement('button');
@@ -845,6 +864,7 @@ function describeMIDI(type, ch, d1, d2) {
   if (type === 0x80) return c + `note ${d1} off`;
   if (type === 0xb0) return c + `CC ${d1} = ${d2}`;
   if (type === 0xe0) return c + `pitch bend ${((d2 << 7) | d1) - 8192}`;
+  if (type === 0xc0) return c + `program ${d1}`;
   return c + `0x${type.toString(16)} ${d1} ${d2}`;
 }
 function handleMIDI(data, ts = performance.now()) {
@@ -856,6 +876,11 @@ function handleMIDI(data, ts = performance.now()) {
     for (const t of TARGETS) midiMap[t.id] = midiMap[t.id].filter(c => c !== data[1]);   // one knob drives one thing
     midiMap[learnTarget] = [data[1]];
     learnTarget = null; saveMap(); onMapChange();
+    return;
+  }
+  if (type === 0xc0) {                                  // Program Change: picks a preset slot, from any channel
+    S.lastMidi = performance.now();
+    if (midiOpts.pc) applyPreset((data[1] % 5) + 1, `program ${data[1]}`);
     return;
   }
   if (ch > 5) return;                                   // channels 1–6 only

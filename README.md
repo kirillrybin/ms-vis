@@ -66,6 +66,12 @@ Note On velocity is taken into account. Every note also sends a ripple across th
 
 CC messages are accepted from any of channels 1–6. These are the defaults, every row can be rebound to any CC (see below). A knob can drive only one thing: binding a CC that is already used moves it.
 
+### Program Change
+
+A Program Change message switches the look to a preset slot, so the visuals can follow the pattern or project you play on the synth. The program number picks the slot: 0 → slot 1, 1 → slot 2, … 4 → slot 5, and then it repeats (5 → slot 1, 6 → slot 2, and so on). It works on any channel. If the slot is empty nothing changes and the status line says so. Save your looks into the slots first (Shift+**1–5**).
+
+The checkbox in the *MIDI & clock* group turns this off (it is on by default). The setting is stored apart from the presets, so loading a preset never changes it. To see what your device sends when you change a pattern, look at the *last message* line in the same group: a Program Change shows up as `ch1 program 3`. If nothing appears, check the device's MIDI settings for sending Program Change.
+
 ### MIDI clock
 
 When the device sends MIDI clock, the visualizer follows the tempo:
