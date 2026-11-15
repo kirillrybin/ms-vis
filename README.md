@@ -55,7 +55,7 @@ The importer only accepts files that were made by this app (`"format": "ms-vis-s
 
 ## Shapes
 
-The core can take five shapes: **Sphere**, **Torus**, **Cube**, **Knot** and **Disc**. Pick one in the *Look* group of the settings panel. Every shape is a cloud of particles plus a wireframe, and all of them go through the same noise deformation and react to the same notes, CCs and clock. When you change the shape, the core collapses, swaps at the smallest size and blooms back (half a second).
+The core can take six shapes: **Sphere**, **Torus**, **Cube**, **Knot**, **Disc** and the **Teapot** (the Utah teapot, the classic test model of 3D graphics, built from Three.js's `TeapotGeometry`). Pick one in the *Look* group of the settings panel. Every shape is a cloud of particles plus a wireframe, and all of them go through the same noise deformation and react to the same notes, CCs and clock. When you change the shape, the core collapses, swaps at the smallest size and blooms back (half a second).
 
 The shape is part of a preset, like the colors and the sliders. So a Program Change from the synth, a preset key (**1–5**) or a click on a preset slot changes the whole form of the visuals, not only the tint: save a different shape into each slot and the look follows the pattern you play.
 
@@ -124,7 +124,7 @@ If the knob appears with a different CC number than the defaults, press **Learn*
 
 ## Under the hood
 
-- **Core:** 36,000 particles (`Points`) plus a wireframe (`LineSegments`) for each of the five shapes. The sphere uses a Fibonacci distribution and an icosphere, the other shapes sample random points on the surface of a Three.js geometry. Only the selected shape is drawn. All of them are deformed in the vertex shader by 3D simplex noise.
+- **Core:** 36,000 particles (`Points`) plus a wireframe (`LineSegments`) for each of the six shapes. The sphere uses a Fibonacci distribution and an icosphere, the other shapes sample random points on the surface of a Three.js geometry. Only the selected shape is drawn. All of them are deformed in the vertex shader by 3D simplex noise.
 - **Hi-hats:** a pool of 900 particles whose motion is computed entirely in the vertex shader. The CPU only writes spawn data when a hat is hit.
 - **Ripples:** up to six rings (one per channel) are evaluated in the vertex shader. They show mostly as light and color, not as geometry. A ring costs nothing while it is inactive.
 - **Trails:** every hi-hat particle is drawn as a head plus 4 fading samples, all computed in the shader from the same spawn data.

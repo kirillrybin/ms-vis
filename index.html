@@ -99,6 +99,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { RGBShiftShader } from 'three/addons/shaders/RGBShiftShader.js';
+import { TeapotGeometry } from 'three/addons/geometries/TeapotGeometry.js';
 
 /* ------------------------------------------------------------------ */
 /* GLSL                                                                */
@@ -342,9 +343,18 @@ const SHAPES = {
   torus:  () => new THREE.TorusGeometry(0.72, 0.3, 24, 64),
   cube:   () => new THREE.BoxGeometry(1.4, 1.4, 1.4, 8, 8, 8),
   knot:   () => new THREE.TorusKnotGeometry(0.62, 0.17, 160, 14, 2, 3),
-  disc:   () => new THREE.CylinderGeometry(1.15, 1.15, 0.2, 56, 4).rotateX(0.75)   // tilted, so it does not turn edge-on
+  disc:   () => new THREE.CylinderGeometry(1.15, 1.15, 0.2, 56, 4).rotateX(0.75),  // tilted, so it does not turn edge-on
+  teapot: () => {                                                  // the Utah teapot, centred and scaled to fit the same space as the other shapes
+    const g = new TeapotGeometry(1, 10, true, true, true, true, true);
+    g.computeBoundingBox();
+    const c = g.boundingBox.getCenter(new THREE.Vector3());
+    g.translate(-c.x, -c.y, -c.z);
+    g.computeBoundingBox();
+    const sz = g.boundingBox.getSize(new THREE.Vector3());
+    return g.scale(...Array(3).fill(2.7 / Math.max(sz.x, sz.y, sz.z))).rotateY(-0.6);
+  }
 };
-const SHAPE_LABELS = [['sphere', 'Sphere'], ['torus', 'Torus'], ['cube', 'Cube'], ['knot', 'Knot'], ['disc', 'Disc']];
+const SHAPE_LABELS = [['sphere', 'Sphere'], ['torus', 'Torus'], ['cube', 'Cube'], ['knot', 'Knot'], ['disc', 'Disc'], ['teapot', 'Teapot']];
 const coreMat = new THREE.ShaderMaterial({
   vertexShader: coreVert, fragmentShader: coreFrag, uniforms: shared,
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
