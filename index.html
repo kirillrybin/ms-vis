@@ -11,6 +11,8 @@
 <meta property="og:image" content="https://kirillrybin.github.io/ms-vis/docs/screenshot.jpg">
 <meta property="og:url" content="https://kirillrybin.github.io/ms-vis/">
 <meta name="twitter:card" content="summary_large_image">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#000000">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23000'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23fff' stroke-width='1.5'/%3E%3Ccircle cx='16' cy='16' r='3.5' fill='%23ff5500'/%3E%3C/svg%3E">
 <style>
   :root { --accent: #ff5500; }
@@ -900,6 +902,13 @@ const groupBody = {};                      // group id -> container; other parts
     else groupBody[group].appendChild(l);
     sliderEls[key] = [inp, show];
   }
+
+  const offlineEl = document.createElement('div');
+  offlineEl.style.cssText = 'opacity:.6;margin:6px 0 2px;word-break:break-word';
+  const showOffline = (t) => { offlineEl.textContent = 'Offline: ' + (t || 'starting…'); };
+  showOffline(window.__msOffline);
+  addEventListener('ms-offline', (e) => showOffline(e.detail));
+  groupBody.perf.appendChild(offlineEl);
 
   // Accent colour: one THREE.Color shared by every shader, ring and the UI
   const accRow = document.createElement('div');
@@ -1823,6 +1832,25 @@ addEventListener('resize', () => {
   composer.setSize(innerWidth, innerHeight);
   shared.uPx.value = curPR * innerHeight / 900;
 });
+</script>
+<script>
+// offline support (needs http(s) or localhost): register the service worker, then ask it to keep every Three.js file this page loaded
+(function () {
+  const say = (t) => { window.__msOffline = t; dispatchEvent(new CustomEvent('ms-offline', { detail: t })); };
+  if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) { say('not available here (open the page over https or localhost)'); return; }
+  navigator.serviceWorker.addEventListener('message', (e) => {
+    if (e.data && e.data.type === 'warmed') say(e.data.count ? `ready: ${e.data.count} files cached, works without internet` : 'could not cache the libraries');
+  });
+  addEventListener('load', async () => {
+    try {
+      await navigator.serviceWorker.register('sw.js');
+      const reg = await navigator.serviceWorker.ready;
+      const urls = performance.getEntriesByType('resource').map(r => r.name).filter(u => u.startsWith('https://cdn.jsdelivr.net/npm/three@'));
+      say('caching…');
+      reg.active.postMessage({ type: 'warm', urls });
+    } catch (e) { say('not available: ' + e.message); }
+  });
+})();
 </script>
 </body>
 </html>

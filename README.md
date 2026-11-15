@@ -14,7 +14,7 @@ Open the demo with `?demo` (https://kirillrybin.github.io/ms-vis/?demo) to start
 2. Allow MIDI access.
 3. The visualizer connects to the first available MIDI input (it prefers devices with "Model" or "Elektron" in the name). You can switch the device in the selector in the top-left corner. It fades out after 3 seconds and reappears on hover.
 
-An internet connection is required: Three.js r160 and its addons are loaded from a CDN (jsdelivr).
+The first visit needs an internet connection: Three.js r160 and its addons are loaded from a CDN (jsdelivr). After that the page works **offline**: a service worker (`sw.js`) keeps the page and every library file in the browser cache, so a flaky Wi-Fi at a gig cannot break it. The *Performance* group of the settings panel shows `Offline: ready` once everything is cached. Open the page once online before you go on stage. It works over https (the live demo) or `localhost`, not over `file://`. The page is always fetched from the network first, so updates arrive on the next load; if the network does not answer within 3 seconds, the cached copy is used. The page can also be installed as an app from the browser menu (*Install ms-vis*).
 
 No synth at hand? Press the hidden **Test Beat** button in the bottom-right corner (it appears on hover). It plays a simulated groove through the same handlers as real MIDI. There are five grooves to choose from in the *Test beat* group of the settings panel: House (122 BPM), Breakbeat (132), Half-time (80), Drum & bass (174) and Ambient (90). Changing the groove while it plays switches to the new one at once.
 
@@ -154,7 +154,7 @@ If the knob appears with a different CC number than the defaults, press **Learn*
 - **Film grain:** a final full-screen pass adds subtle noise, strongest in the mid-tones, and leaves pure black clean.
 - **Auto quality:** if FPS stays below 45, particle density is lowered (and, as a last resort, the pixel ratio drops to 1); it recovers slowly when FPS is stable. The current FPS and quality level are shown in the settings panel title. It can be switched off with the "Auto quality" slider (Performance group).
 - **Post-processing:** `EffectComposer` with `UnrealBloomPass`, `RGBShiftShader` and a custom inversion pass.
-- **All code** (HTML, CSS, JS, GLSL) lives in a single `index.html` file.
+- **All code** (HTML, CSS, JS, GLSL) lives in a single `index.html` file; `sw.js`, `manifest.webmanifest` and `icon.svg` only add offline use and installation.
 
 ## License
 
