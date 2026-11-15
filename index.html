@@ -156,17 +156,15 @@ uniform vec3  uBand;  // MIDI clock scanner: x = angle (rad), y = strength
 uniform vec3  uWaveDir[6]; // origin of the ripple of each MIDI channel
 uniform float uWaveAge[6]; // seconds since the hit
 uniform float uWaveAmt[6]; // strength (decays on the CPU), 0 = inactive
-// expanding ring whose crest is broken up by ridged 3D noise
+// a clean thin ring that expands from the channel's origin; it is shown mostly by light and colour
 float waves(vec3 p){
   vec3 n = normalize(p);
   float w = 0.0;
   for (int i = 0; i < 6; i++) {
     if (uWaveAmt[i] < 0.01) continue;
     float ang = acos(clamp(dot(n, uWaveDir[i]), -1.0, 1.0));
-    float front = 0.16 + uWaveAge[i] * 1.9;                 // wave starts as a visible cap and sweeps outwards
-    float band = exp(-pow((ang - front) / 0.38, 2.0)) + 0.6 * exp(-pow(ang / 0.45, 2.0)) * exp(-uWaveAge[i] * 9.0);
-    float ridge = 1.0 - abs(snoise(n * 3.2 + uWaveDir[i] * 5.0 + uTime * 0.4));
-    w += uWaveAmt[i] * band * (0.25 + ridge * ridge);
+    float front = 0.1 + uWaveAge[i] * 1.9;                  // radius of the ring (radians from the origin)
+    w += uWaveAmt[i] * exp(-pow((ang - front) / 0.2, 2.0));
   }
   return w;
 }
@@ -190,7 +188,7 @@ float disp(vec3 p){
 }
 vec3 displace(vec3 p, out float d, out float wv){
   wv = waves(p);
-  d = disp(p) + wv * 0.5;
+  d = disp(p) + wv * 0.08;                  // the ring barely moves the shape
   return p * (1.0 + uKick*0.32 + uBeat*0.09 + d);
 }`;
 
@@ -217,7 +215,7 @@ void main(){
   float accent = step(aRand, 0.035);                 // rare orange particles
   float bd = band(position);
   vAccent = clamp(accent * (0.55 + uKick*0.45) + wv * 1.6 + bd * 1.2, 0.0, 1.0);   // ripple crest and scanner turn orange
-  vBright = clamp(0.35 + abs(d)*1.6 + uKick*0.5 + wv*1.0 + uBeat*0.25 + bd*0.7, 0.0, 1.5) * uBright;
+  vBright = clamp(0.35 + abs(d)*1.6 + uKick*0.5 + wv*1.4 + uBeat*0.25 + bd*0.7, 0.0, 1.5) * uBright;
 }`;
 const coreFrag = /* glsl */`
 uniform vec3 uOrange;

@@ -59,7 +59,7 @@ Channels 1–6 are used, which are the Model:Samples tracks by default.
 | 3 | Hi-Hat | Burst of small particles around the center |
 | 4–6 | Rings | Rotation and pulsing of thin wireframe rings, driven by the note number |
 
-Note On velocity is taken into account. Every note also sends a ripple across the core: a ring with a noise-broken crest that expands from the channel's own origin on the side facing you (kick lower left, snare upper right, hi-hat upper left, channel 4 lower right, channels 5 and 6 at the sides), lights up in orange and fades out. The note's pitch nudges the origin, so tracks look different even when they play the same note. Note Off lets a ring (channels 4–6) fade out as soon as the key is released, otherwise it is held for up to 1.5 s. Pitch Bend on any of channels 1–6 rolls the camera.
+Note On velocity is taken into account. Every note also sends a ripple across the core: a thin, clean ring of light that expands from the channel's own origin on the side facing you (kick lower left, snare upper right, hi-hat upper left, channel 4 lower right, channels 5 and 6 at the sides), tints the surface orange as it passes and fades out. It hardly changes the shape of the sphere. The note's pitch nudges the origin, so tracks look different even when they play the same note. Note Off lets a ring (channels 4–6) fade out as soon as the key is released, otherwise it is held for up to 1.5 s. Pitch Bend on any of channels 1–6 rolls the camera.
 
 | CC | Parameter | Effect |
 |----|-----------|--------|
@@ -96,7 +96,7 @@ If the knob appears with a different CC number than the defaults, press **Learn*
 
 - **Core:** 36,000 particles (`Points`) on a Fibonacci sphere plus a wireframe icosphere (`LineSegments`). Both are deformed in the vertex shader by 3D simplex noise.
 - **Hi-hats:** a pool of 900 particles whose motion is computed entirely in the vertex shader. The CPU only writes spawn data when a hat is hit.
-- **Ripples:** up to six waves (one per channel) are evaluated in the vertex shader, shaped by ridged simplex noise. A wave costs nothing while it is inactive.
+- **Ripples:** up to six rings (one per channel) are evaluated in the vertex shader. They show mostly as light and color, not as geometry. A ring costs nothing while it is inactive.
 - **Trails:** every hi-hat particle is drawn as a head plus 4 fading samples, all computed in the shader from the same spawn data.
 - **Film grain:** a final full-screen pass adds subtle noise, strongest in the mid-tones, and leaves pure black clean.
 - **Auto quality:** if FPS stays below 45, particle density is lowered (and, as a last resort, the pixel ratio drops to 1); it recovers slowly when FPS is stable. The current FPS and quality level are shown in the settings panel title. It can be switched off with the "Auto quality" slider.
