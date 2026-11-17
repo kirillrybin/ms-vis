@@ -18,6 +18,33 @@ The first visit needs an internet connection: Three.js r160 and its addons are l
 
 No synth at hand? Press the hidden **Test Beat** button in the bottom-right corner (it appears on hover). It plays a simulated groove through the same handlers as real MIDI. There are five grooves to choose from in the *Test beat* group of the settings panel: House (122 BPM), Breakbeat (132), Half-time (80), Drum & bass (174) and Ambient (90). Changing the groove while it plays switches to the new one at once.
 
+## Setting up the Model:Samples
+
+Out of the box the Model:Samples may send nothing useful over USB (in the first tests only the clock came through, no encoders and no Program Change). Set these in the **CONFIG** menu:
+
+| Menu | Setting | Value | What it enables |
+|------|---------|-------|-----------------|
+| **MIDI → SYNC** | CLK OUT | **ON** | MIDI clock, Start and Stop (tempo and the beat pulse) |
+| **MIDI → SYNC** | PCH OUT | **ON** | Program Change when you switch patterns (preset slots) |
+| **MIDI → PORTS** | OUT TO | **M+U** | send to both the MIDI port and USB (the visualizer needs USB) |
+| **MIDI → FILTER** | ENCS | **I+E** | encoder turns are sent as CC (Bloom, Cutoff, Sharpness and the other mapped knobs) |
+
+Then connect the device with a USB cable, open the page and allow MIDI access. The Model:Samples should be picked automatically; otherwise choose it in the selector in the top-left corner.
+
+To check what arrives, open the settings panel (**H**), the *MIDI & clock* group:
+
+- the line under the title shows the listened port and counters: `messages` counts notes and CCs, `clock/realtime` counts the clock;
+- the MIDI log lists the latest messages by channel: notes as `ch1 note 60 vel 100`, encoders as `ch1 CC 74 = 80`, a pattern change as `ch8 program 2` (Program Change may come on a different channel than the tracks; the visualizer accepts it from any channel).
+
+If something is missing:
+
+| Symptom | Check |
+|---------|-------|
+| Nothing arrives at all | the right port is selected, no other program (a DAW, Elektron Transfer) holds the device, MIDI access is allowed in Chrome |
+| Only the clock arrives (`clock/realtime` grows, `messages` stays 0) | the track channels and the notes themselves: play a pad or run a pattern; for knobs set **FILTER → ENCS** as above |
+| Knobs do nothing | **ENCS = I+E**; then turn a knob and look for its `CC` number in the log, and bind it with **Learn** if it is not the default one |
+| Pattern change does not switch the look | **PCH OUT = ON**, presets saved into the slots (Shift + 1–5), and see *Program Change* below to bind the program numbers |
+
 ## Projector mode
 
 | Key | Action |
