@@ -36,6 +36,8 @@ To check what arrives, open the settings panel (**H**), the *MIDI & clock* group
 - the line under the title shows the listened port and counters: `messages` counts notes and CCs, `clock/realtime` counts the clock;
 - the MIDI log lists the latest messages by channel: notes as `ch1 note 60 vel 100`, encoders as `ch1 CC 74 = 80`, a pattern change as `ch8 program 2` (Program Change may come on a different channel than the tracks; the visualizer accepts it from any channel).
 
+To see the raw MIDI text outside the browser, you can use **MIDI Monitor** by Snoize (a free macOS app, https://www.snoize.com/midimonitor/): select the Model:Samples as its source and it lists every message the device sends, with the channel and the values. It is handy to tell whether a problem is on the device side (nothing is sent) or in the page.
+
 If something is missing:
 
 | Symptom | Check |
