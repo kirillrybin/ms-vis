@@ -774,7 +774,7 @@ const SPEC = [
   ['snareGain', 'Snare sensitivity', 0, 2, 0.01, 'react'],
   ['snareDecay','Snare decay speed', 2, 25, 0.1, 'react'],
   ['shift',     'RGB shift max', 0, 0.04, 0.001, 'react'],
-  ['snareFlash','Snare flash length (0=off)', 0, 1, 0.01, 'react'],
+  ['snareFlash','Snare flash (0/1)', 0, 1, 1, 'react'],
   ['hatAmount', 'Hi-hat particles', 0, 3, 0.05, 'react'],
   ['ripple',    'Note ripple', 0, 2, 0.05, 'react'],
   ['glowBase',  'Bloom base', 0, 1.5, 0.01, 'look'],
@@ -889,7 +889,7 @@ const groupBody = {};                      // group id -> container; other parts
   function markSlots() { slotBtns.forEach((b, i) => b.classList.toggle('filled', !!presets[i + 1])); }
   // A preset change glides: the numbers move to the new values over `secs`, the discrete things (shape, groove, accent step) switch at once
   let tween = null;
-  const TWEEN_SKIP = new Set(['auto', 'idle', ...Object.keys(SHAPE_PARAM_DEFAULTS)]);
+  const TWEEN_SKIP = new Set(['auto', 'idle', 'snareFlash', ...Object.keys(SHAPE_PARAM_DEFAULTS)]);
   function applyLook(target, secs) {
     const to = { ...DEFAULTS, ...target };
     tween = null;
@@ -1281,7 +1281,7 @@ const groupBody = {};                      // group id -> container; other parts
     const out = {};
     if (!o || typeof o !== 'object') return out;
     for (const [key, , min, max] of SPEC) if (typeof o[key] === 'number' && isFinite(o[key])) out[key] = clampNum(o[key], min, max);
-    for (const k of ['knotP', 'knotQ']) if (k in out) out[k] = Math.round(out[k]);     // windings are whole numbers
+    for (const k of ['knotP', 'knotQ', 'snareFlash']) if (k in out) out[k] = Math.round(out[k]);     // windings are whole numbers
     if (typeof o.accent === 'string' && /^#[0-9a-f]{6}$/i.test(o.accent)) out.accent = o.accent.toLowerCase();
     if (GROOVE_LABELS.some(g => g[0] === o.groove)) out.groove = o.groove;
     if (typeof o.shape === 'string' && (shapeGroups[o.shape] || o.shape === 'custom')) out.shape = o.shape;
@@ -1446,7 +1446,7 @@ function onNote(ch, note, vel) {
     flashStatus(`ch${ch + 1} kick ${vel}`);
   } else if (role === 'snare') {
     S.snare = Math.max(S.snare, (0.4 + v * 0.6) * cfg.snareGain);
-    S.invertUntil = performance.now() + 100 * cfg.snareFlash;   // the slider shortens the flash, it stays a crisp full inversion
+    if (cfg.snareFlash >= 0.5) S.invertUntil = performance.now() + 100;   // a snare hit inverts the picture for 100 ms, unless the flash is off
     flashStatus(`ch${ch + 1} snare ${vel}`);
   } else if (role === 'hat') {
     spawnHat(vel);
