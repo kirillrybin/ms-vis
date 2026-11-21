@@ -67,8 +67,8 @@ Press **H** to show or hide the panel in the top-right corner. The five preset s
 
 - **Reaction:** kick and snare sensitivity and decay speed, camera zoom on kick, maximum RGB shift on snare, **Snare flash** (how strongly a snare hit inverts the picture for 100 ms: 1 by default is the full inversion, lower values give a weaker, greyer flash, 0 turns it off; lower it if the flicker is too much, it matters for photosensitive viewers), number of hi-hat particles, strength of the note ripple;
 - **Look:** the core shape (see below), bloom base level and range, particle density, size and brightness, hi-hat trails, film grain, rotation speed, and the accent color (a color picker plus six swatches that recolor the rare particles, ripple rings, hi-hat sparks, rings, scanner band and the UI);
-- **MIDI & clock:** strength of the clock beat pulse and scanner band, the last MIDI message, connection diagnostics and CC learn;
-- **Performance:** idle calm (after the chosen number of seconds without MIDI the scene gently calms down: smoother shape, softer glow, slower rotation; it wakes up instantly on the next message) auto quality, and **Preset blend**: how many seconds a preset change takes (0.6 s by default, 0 = instant);
+- **MIDI & clock:** strength of the clock beat pulse and scanner band, the MIDI log, connection diagnostics, CC learn, the channels whose encoders drive the visuals, Program Change options and the track roles;
+- **Performance:** idle calm (after the chosen number of seconds without MIDI the scene gently calms down: smoother shape, softer glow, slower rotation; it wakes up instantly on the next message), auto quality, the offline status and **Preset blend**: how many seconds a preset change takes (0.6 s by default, 0 = instant);
 - **Test beat:** the groove played by Test Beat;
 - **Recording:** the audio input used for video recording;
 - **Backup:** export and import of your whole setup (see below).
@@ -81,7 +81,7 @@ Values are saved in the browser's `localStorage`. **Reset all settings** at the 
 
 Everything is stored in the browser's `localStorage`, so it lives in one browser on one computer. The *Backup* group of the settings panel moves it around:
 
-- **Export settings** downloads `ms-vis-settings-<date>.json` with the current look settings, the five preset slots (shapes included), the CC mapping, the track roles and the Program Change option and map;
+- **Export settings** downloads `ms-vis-settings-<date>.json` with the current look settings, the five preset slots (shapes included), the CC mapping, the track roles, the encoder channels, the preset blend time and the Program Change option and map;
 - **Import settings…** reads such a file back. Presets in the file replace the slots with the same number; slots that are not in the file stay as they are. The panel tells you what was imported.
 
 The importer only accepts files that were made by this app (`"format": "ms-vis-settings"`), refuses files over 200 KB and checks every value: numbers are clamped to the range of their slider, colors, shapes, grooves and roles must be known values, CC numbers must be integers from 0 to 127, and anything unknown is ignored. A broken or hostile file cannot put the app into a bad state, it can only fail with a message.
@@ -138,7 +138,7 @@ Note On velocity is taken into account. Every note also sends a ripple across th
 | 7 | Volume | Brightness: full volume is the normal look, lower values dim the scene |
 | — | (unassigned) | *Particle size* and *Rotation*: bind any knob with **Learn** |
 
-CC messages are accepted from any of channels 1–6. These are the defaults, every row can be rebound to any CC (see below). A knob can drive only one thing: binding a CC that is already used moves it.
+CC messages are accepted from channels 1–6 by default; you can limit which channels' encoders move the picture (see *Which channels' encoders drive the visuals* below). These are the defaults, every row can be rebound to any CC (see below). A knob can drive only one thing: binding a CC that is already used moves it.
 
 ### Track roles
 
@@ -180,11 +180,11 @@ The *Clock beat pulse* slider sets the strength of the pulse and of the scanner 
 
 ### Checking and remapping CCs
 
-Open the settings panel (**H**) and the *MIDI & clock* group. It starts with a MIDI log: the six latest messages, newest on top, for example `ch2 CC 74 = 100`. The log includes messages that are not mapped to anything and notes from channels above 6 (marked `· ignored`). A message of the same kind (same channel, type and number) updates its own line instead of adding a new one, so a knob sweep or a note-on and note-off pair never floods the list, and the box has a fixed height, so the panel does not jump. Under it, a status line lists the MIDI inputs found, the one(s) being listened to and two counters: *messages* (notes, CC, pitch bend) and *clock/realtime* (MIDI clock and similar). Use them to find where the signal stops:
+Open the settings panel (**H**) and the *MIDI & clock* group. It starts with a MIDI log: the six latest messages, newest on top, for example `ch2 CC 74 = 100`. The log includes messages that are not mapped to anything and notes from channels above 6 and encoder turns from unticked channels (marked `· ignored`). A message of the same kind (same channel, type and number) updates its own line instead of adding a new one, so a knob sweep or a note-on and note-off pair never floods the list, and the box has a fixed height, so the panel does not jump. Under it, a status line lists the MIDI inputs found, the one(s) being listened to and two counters: *messages* (notes, CC, pitch bend) and *clock/realtime* (MIDI clock and similar). Use them to find where the signal stops:
 
 - *clock/realtime* grows but *messages* does not move when you turn a knob or play a pad: the device is connected but is not sending those messages. Check its MIDI output settings (for example which parameters or which port it sends to).
 - both counters stay at 0: nothing reaches the browser from the selected input. Pick another input, or choose **All inputs** in the selector in the top-left corner (it appears when more than one input exists), and check the cable, the USB connection and the device's MIDI port settings.
-- *messages* grows but nothing happens on screen: the message is probably on a channel above 6 or a CC that is not mapped, see the MIDI log above. Some Elektron devices can send parameter changes as NRPN instead of plain CC, which this visualizer does not read.
+- *messages* grows but nothing happens on screen: the message is probably on a channel above 6, on a channel whose encoders are unticked, or a CC that is not mapped, see the MIDI log above. Some Elektron devices can send parameter changes as NRPN instead of plain CC, which this visualizer does not read.
 
 If the knob appears with a different CC number than the defaults, press **Learn** next to the parameter (*Cutoff*, *Bloom*, *Sharpness*, *Brightness*, *Particle size* or *Rotation*), then turn the knob on the device. That CC is bound immediately and remembered; **×** unassigns it. **Default CCs** restores the table above. The mapping is stored separately from the presets, so loading a preset never changes it.
 
@@ -196,7 +196,7 @@ If the knob appears with a different CC number than the defaults, press **Learn*
 - **Trails:** every hi-hat particle is drawn as a head plus 4 fading samples, all computed in the shader from the same spawn data.
 - **Film grain:** a final full-screen pass adds subtle noise, strongest in the mid-tones, and leaves pure black clean.
 - **Auto quality:** if FPS stays below 45, particle density is lowered (and, as a last resort, the pixel ratio drops to 1); it recovers slowly when FPS is stable. The current FPS and quality level are shown in the settings panel title. It can be switched off with the "Auto quality" slider (Performance group).
-- **Post-processing:** `EffectComposer` with `UnrealBloomPass`, `RGBShiftShader` and a custom inversion pass.
+- **Post-processing:** `EffectComposer` with `UnrealBloomPass`, the video background pass, `RGBShiftShader`, a custom inversion pass and the grain pass.
 - **All code** (HTML, CSS, JS, GLSL) lives in a single `index.html` file; `sw.js`, `manifest.webmanifest` and `icon.svg` only add offline use and installation.
 
 ## License
