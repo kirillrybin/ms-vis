@@ -774,7 +774,7 @@ const SPEC = [
   ['snareGain', 'Snare sensitivity', 0, 2, 0.01, 'react'],
   ['snareDecay','Snare decay speed', 2, 25, 0.1, 'react'],
   ['shift',     'RGB shift max', 0, 0.04, 0.001, 'react'],
-  ['snareFlash','Snare flash (0=off)', 0, 1, 0.01, 'react'],
+  ['snareFlash','Snare flash length (0=off)', 0, 1, 0.01, 'react'],
   ['hatAmount', 'Hi-hat particles', 0, 3, 0.05, 'react'],
   ['ripple',    'Note ripple', 0, 2, 0.05, 'react'],
   ['glowBase',  'Bloom base', 0, 1.5, 0.01, 'look'],
@@ -1446,7 +1446,7 @@ function onNote(ch, note, vel) {
     flashStatus(`ch${ch + 1} kick ${vel}`);
   } else if (role === 'snare') {
     S.snare = Math.max(S.snare, (0.4 + v * 0.6) * cfg.snareGain);
-    S.invertUntil = performance.now() + 100;
+    S.invertUntil = performance.now() + 100 * cfg.snareFlash;   // the slider shortens the flash, it stays a crisp full inversion
     flashStatus(`ch${ch + 1} snare ${vel}`);
   } else if (role === 'hat') {
     spawnHat(vel);
@@ -1926,7 +1926,7 @@ function frame() {
   // snare: chromatic aberration + 100 ms invert
   rgb.uniforms.amount.value = 0.0004 + S.snare * cfg.shift;
   rgb.uniforms.angle.value += dt * 0.6;
-  invertPass.uniforms.uInvert.value = now < S.invertUntil ? cfg.snareFlash : 0;   // 1 = the classic full inversion
+  invertPass.uniforms.uInvert.value = now < S.invertUntil ? 1 : 0;
 
   // camera: slow orbit + kick zoom
   camAngle += dt * 0.08;
