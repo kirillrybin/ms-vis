@@ -150,6 +150,12 @@ In the *MIDI & clock* group of the settings panel, *Track roles* lets you decide
 
 Several channels may share a role, for example two kick tracks. Every channel that is not ignored also sends its own ripple across the core, whatever its role is. **Default roles** restores the table above. The roles are stored apart from the presets, like the CC mapping and the Program Change option, so loading a preset never changes them. Test Beat plays on channels 1–6 and follows the roles too.
 
+### Which channels' encoders drive the visuals
+
+The Model:Samples sends the encoder turns (CC) on the channel of the **selected track**. By default the visuals follow the encoders of every channel 1–6, so tweaking the sound of track 1 also moves the picture. In the *MIDI & clock* group, **Encoders drive the visuals from channels** has a checkbox for each channel: untick the channels whose encoders should not touch the picture. For example, keep only **6** ticked: you shape the sounds of tracks 1–5 freely, and only when you select track 6 do its encoders move the visuals.
+
+An encoder turn from an unticked channel still appears in the MIDI log, marked `ignored`, and it does not wake the scene from the idle calm. **Learn** works from any channel, so you can bind a knob while any track is selected. All channels are ticked by default. The setting is stored apart from the presets and is part of the settings export. Notes are not affected: they follow the track roles.
+
 ### Program Change
 
 A Program Change message switches the look to a preset slot, so the visuals can follow the pattern or project you play on the synth. It works on any channel. By default the program number picks the slot and repeats: 0 → slot 1, 1 → slot 2, … 4 → slot 5, 5 → slot 1, and so on.

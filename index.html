@@ -840,8 +840,10 @@ const CLK = { tick: 0, bar: 0, running: null, times: [], bpm: 0, lastTick: 0 }; 
 const clockAlive = (now) => CLK.running !== false && CLK.bpm > 0 && now - CLK.lastTick < 400;   // connection diagnostics shown in the panel
 // MIDI options, stored apart from the look settings so that loading a preset never changes them
 const OPTS_KEY = 'ms-vis-midiopts-v1';
-const midiOpts = { pc: true, blend: 0.6 };           // Program Change selects a preset; blend = seconds a preset change takes (0 = instant)
+const midiOpts = { pc: true, blend: 0.6, ccCh: [true, true, true, true, true, true] };   // Program Change selects a preset; blend = seconds a preset change takes (0 = instant); ccCh = channels whose encoders drive the visuals
 try { Object.assign(midiOpts, JSON.parse(localStorage.getItem(OPTS_KEY) || '{}')); } catch (_) {}
+const cleanCcCh = (a) => Array.isArray(a) && a.length === 6 && a.every(v => typeof v === 'boolean') ? [...a] : null;
+midiOpts.ccCh = cleanCcCh(midiOpts.ccCh) || [true, true, true, true, true, true];
 function saveOpts() { try { localStorage.setItem(OPTS_KEY, JSON.stringify(midiOpts)); } catch (_) {} }
 // Program Change map: program number (0-127) -> preset slot (1-5). Empty = the old "repeat every 5" mode.
 const PROG_KEY = 'ms-vis-programmap-v1';
@@ -1205,6 +1207,27 @@ const groupBody = {};                      // group id -> container; other parts
   const mapReset = document.createElement('button');
   mapReset.textContent = 'Default CCs';
   mapReset.style.cssText = 'margin:2px 0 6px';
+  // which channels' encoders drive the visuals (Model:Samples sends them on the channel of the selected track)
+  const ccRow = document.createElement('div');
+  ccRow.style.cssText = 'margin:8px 0 4px;opacity:.85';
+  const ccTitle = document.createElement('div');
+  ccTitle.textContent = 'Encoders drive the visuals from channels:';
+  const ccNote = document.createElement('div');
+  ccNote.style.cssText = 'opacity:.6;margin:2px 0 4px';
+  ccNote.textContent = 'The Model:Samples sends encoder turns on the channel of the selected track. Untick a channel to tweak its sound without moving the picture.';
+  const ccBoxes = document.createElement('div');
+  ccBoxes.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap';
+  const ccInputs = [];
+  for (let c = 0; c < 6; c++) {
+    const lab = document.createElement('label');
+    lab.style.cssText = 'display:flex;align-items:center;gap:4px;margin:0;cursor:pointer';
+    const box = document.createElement('input');
+    box.type = 'checkbox'; box.checked = midiOpts.ccCh[c]; box.style.cssText = 'margin:0;accent-color:var(--accent)';
+    box.addEventListener('change', () => { midiOpts.ccCh[c] = box.checked; saveOpts(); });
+    lab.append(box, document.createTextNode(String(c + 1)));
+    ccInputs.push(box); ccBoxes.appendChild(lab);
+  }
+  ccRow.append(ccTitle, ccNote, ccBoxes);
   const progRows = [];
   const progBox = document.createElement('div');
   progBox.style.cssText = 'margin:4px 0 8px';
@@ -1293,7 +1316,7 @@ const groupBody = {};                      // group id -> container; other parts
       settings: cleanLook(cfg),
       presets: Object.fromEntries(Object.entries(presets).map(([k, v]) => [k, cleanLook(v)])),
       midiMap: Object.fromEntries(TARGETS.map(t => [t.id, [...midiMap[t.id]]])),
-      midiOptions: { pc: !!midiOpts.pc, blend: midiOpts.blend },
+      midiOptions: { pc: !!midiOpts.pc, blend: midiOpts.blend, ccChannels: [...midiOpts.ccCh] },
       programMap: { ...programMap },
       roles: [...roles]
     };
@@ -1324,6 +1347,9 @@ const groupBody = {};                      // group id -> container; other parts
     }
     if (d.midiOptions && typeof d.midiOptions.pc === 'boolean') {
       midiOpts.pc = d.midiOptions.pc; pcBox.checked = midiOpts.pc; saveOpts(); done.push('Program Change option');
+    }
+    if (d.midiOptions && cleanCcCh(d.midiOptions.ccChannels)) {
+      midiOpts.ccCh = cleanCcCh(d.midiOptions.ccChannels); ccInputs.forEach((b, i) => { b.checked = midiOpts.ccCh[i]; }); saveOpts(); done.push('encoder channels');
     }
     if (d.midiOptions && typeof d.midiOptions.blend === 'number' && isFinite(d.midiOptions.blend)) {
       midiOpts.blend = clampNum(d.midiOptions.blend, 0, 3); blendI.value = midiOpts.blend; showBlend(); saveOpts(); done.push('preset blend');
@@ -1374,7 +1400,7 @@ const groupBody = {};                      // group id -> container; other parts
   mapReset.addEventListener('click', () => { Object.assign(midiMap, defaultMap()); learnTarget = null; saveMap(); renderMap(); });
   groupBody.midi.append(lastMsg, statsEl,
     ...TARGETS.map(t => mapRow(t.label, t.id, () => midiMap[t.id].length ? 'CC ' + midiMap[t.id].join(' / ') : '—')),
-    mapReset, pcRow, progBox, rolesHead, rolesGrid, rolesReset);
+    mapReset, ccRow, pcRow, progBox, rolesHead, rolesGrid, rolesReset);
   renderMap(); renderProg();
 
   const reset = document.createElement('button');
@@ -1522,7 +1548,8 @@ function handleMIDI(data, ts = performance.now()) {
   const type = st & 0xf0, ch = st & 0x0f;
   const isOff = type === 0x80 || (type === 0x90 && !data[2]);
   const logKey = `${isOff ? 'off' : type}:${ch}:${type === 0x90 || type === 0x80 || type === 0xb0 ? data[1] : 0}`;
-  onLastMsg(describeMIDI(type, ch, data[1], data[2]) + (ch > 5 && type !== 0xc0 ? ' · ignored' : ''), logKey);
+  const ccOff = type === 0xb0 && ch <= 5 && !midiOpts.ccCh[ch];          // encoders of this channel are not meant for the visuals
+  onLastMsg(describeMIDI(type, ch, data[1], data[2]) + ((ch > 5 && type !== 0xc0) || (ccOff && !learnTarget) ? ' · ignored' : ''), logKey);
   if (type === 0xb0 && learnTarget) {                   // CC learn: bind the knob that was just turned
     for (const t of TARGETS) midiMap[t.id] = midiMap[t.id].filter(c => c !== data[1]);   // one knob drives one thing
     midiMap[learnTarget] = [data[1]];
@@ -1544,6 +1571,7 @@ function handleMIDI(data, ts = performance.now()) {
     return;
   }
   if (ch > 5) return;                                   // channels 1–6 only
+  if (ccOff) return;                                    // encoder turned on a channel that is switched off: no reaction, no wake-up
   S.lastMidi = performance.now();
   if (type === 0x90 && data[2] > 0) onNote(ch, data[1], data[2]);
   else if (type === 0x80 || type === 0x90) onNoteOff(ch, data[1]);
