@@ -65,7 +65,7 @@ The cursor disappears after 2 seconds without mouse movement. While recording, a
 
 Press **H** to show or hide the panel in the top-right corner. The five preset slots are always at the top; everything else is in collapsible groups (the open or closed state of each group is remembered):
 
-- **Reaction:** kick and snare sensitivity and decay speed, camera zoom on kick, maximum RGB shift on snare, number of hi-hat particles, strength of the note ripple;
+- **Reaction:** kick and snare sensitivity and decay speed, camera zoom on kick, maximum RGB shift on snare, **Snare flash** (how strongly a snare hit inverts the picture for 100 ms; 1 by default is the full inversion, lower values make it softer, 0 turns the flash off; lower it if the flicker is too much, it matters for photosensitive viewers), number of hi-hat particles, strength of the note ripple;
 - **Look:** the core shape (see below), bloom base level and range, particle density, size and brightness, hi-hat trails, film grain, rotation speed, and the accent color (a color picker plus six swatches that recolor the rare particles, ripple rings, hi-hat sparks, rings, scanner band and the UI);
 - **MIDI & clock:** strength of the clock beat pulse and scanner band, the last MIDI message, connection diagnostics and CC learn;
 - **Performance:** idle calm (after the chosen number of seconds without MIDI the scene gently calms down: smoother shape, softer glow, slower rotation; it wakes up instantly on the next message) auto quality, and **Preset blend**: how many seconds a preset change takes (0.6 s by default, 0 = instant);
@@ -107,7 +107,7 @@ Sphere and Teapot have no parameters. A shape that would grow past the view is s
 
 ### Video background
 
-The *Look* group has a **Video background** row with three sources: **File…** (a local `.mp4` or `.webm`, looped and muted), **Camera** and **Screen** (a shared screen or window, for example the output of another VJ program). The picture is cropped to cover the screen and plays behind the core. It is added to the picture right after the bloom (a bright full-screen picture would otherwise be amplified by the bloom several times), so the RGB shift, snare inversion and grain apply to it and it is part of the recording (**R**). **Video opacity** (0.3 by default) dims it so that the particles stay readable; it is a normal slider, so it is saved in presets and glides between them. A snare hit inverts the video together with the rest of the picture. **Remove** stops the source.
+The *Look* group has a **Video background** row with three sources: **File…** (a local `.mp4` or `.webm`, looped and muted), **Camera** and **Screen** (a shared screen or window, for example the output of another VJ program). The picture is cropped to cover the screen and plays behind the core. It is added to the picture right after the bloom (a bright full-screen picture would otherwise be amplified by the bloom several times), so the RGB shift, snare inversion and grain apply to it and it is part of the recording (**R**). **Video opacity** (0.3 by default) dims it so that the particles stay readable; it is a normal slider, so it is saved in presets and glides between them. A snare hit flashes the video together with the rest of the picture (see *Snare flash*). **Remove** stops the source.
 
 Nothing is uploaded and the video is not saved: pick it again after a reload. Camera and screen need the browser's permission. A 1080p video is a good size; 4K together with the bloom can cost frames.
 

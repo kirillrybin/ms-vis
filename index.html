@@ -743,7 +743,7 @@ composer.addPass(grainPass);
 /* ------------------------------------------------------------------ */
 const DEFAULTS = {
   kickGain: 1, kickDecay: 5.5, zoom: 0.9,
-  snareGain: 1, snareDecay: 9, shift: 0.014,
+  snareGain: 1, snareDecay: 9, shift: 0.014, snareFlash: 1,
   hatAmount: 1,
   glowBase: 0.25, glowRange: 2.2,
   density: 1, size: 1, bright: 1, spin: 1, auto: 1,
@@ -774,6 +774,7 @@ const SPEC = [
   ['snareGain', 'Snare sensitivity', 0, 2, 0.01, 'react'],
   ['snareDecay','Snare decay speed', 2, 25, 0.1, 'react'],
   ['shift',     'RGB shift max', 0, 0.04, 0.001, 'react'],
+  ['snareFlash','Snare flash (0=off)', 0, 1, 0.01, 'react'],
   ['hatAmount', 'Hi-hat particles', 0, 3, 0.05, 'react'],
   ['ripple',    'Note ripple', 0, 2, 0.05, 'react'],
   ['glowBase',  'Bloom base', 0, 1.5, 0.01, 'look'],
@@ -1925,7 +1926,7 @@ function frame() {
   // snare: chromatic aberration + 100 ms invert
   rgb.uniforms.amount.value = 0.0004 + S.snare * cfg.shift;
   rgb.uniforms.angle.value += dt * 0.6;
-  invertPass.uniforms.uInvert.value = now < S.invertUntil ? 1 : 0;
+  invertPass.uniforms.uInvert.value = now < S.invertUntil ? cfg.snareFlash : 0;   // 1 = the classic full inversion
 
   // camera: slow orbit + kick zoom
   camAngle += dt * 0.08;
