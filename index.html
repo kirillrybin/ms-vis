@@ -743,7 +743,7 @@ composer.addPass(grainPass);
 /* ------------------------------------------------------------------ */
 const DEFAULTS = {
   kickGain: 1, kickDecay: 5.5, zoom: 0.9,
-  snareGain: 1, snareDecay: 9, shift: 0.014, snareFlash: 0.3,
+  snareGain: 1, snareDecay: 9, shift: 0.014, snareFlash: 1,
   hatAmount: 1,
   glowBase: 0.25, glowRange: 2.2,
   density: 1, size: 1, bright: 1, spin: 1, auto: 1,
@@ -1397,7 +1397,7 @@ const groupBody = {};                      // group id -> container; other parts
 }
 
 const S = {
-  kick: 0, snare: 0, wave: [0, 0, 0, 0, 0, 0], waveAge: [0, 0, 0, 0, 0, 0], flash: 0,
+  kick: 0, snare: 0, wave: [0, 0, 0, 0, 0, 0], waveAge: [0, 0, 0, 0, 0, 0], invertUntil: 0,
   beatFx: 0, barFx: 0, bandA: 0, tempoK: 1,           // MIDI clock pulses and tempo-scaled rotation
   calm: 0, lastMidi: performance.now(),   // idle calm (0 = alive, 1 = fully calm)
   bend: 0, bendT: 0,                       // pitch bend -1..1
@@ -1446,7 +1446,7 @@ function onNote(ch, note, vel) {
     flashStatus(`ch${ch + 1} kick ${vel}`);
   } else if (role === 'snare') {
     S.snare = Math.max(S.snare, (0.4 + v * 0.6) * cfg.snareGain);
-    S.flash = 1;
+    S.invertUntil = performance.now() + 100;
     flashStatus(`ch${ch + 1} snare ${vel}`);
   } else if (role === 'hat') {
     spawnHat(vel);
@@ -1926,8 +1926,7 @@ function frame() {
   // snare: chromatic aberration + 100 ms invert
   rgb.uniforms.amount.value = 0.0004 + S.snare * cfg.shift;
   rgb.uniforms.angle.value += dt * 0.6;
-  S.flash = Math.max(0, S.flash - dt / 0.16);                 // the snare flash fades out instead of cutting
-  invertPass.uniforms.uInvert.value = S.flash * S.flash * cfg.snareFlash;
+  invertPass.uniforms.uInvert.value = now < S.invertUntil ? cfg.snareFlash : 0;   // 1 = the classic full inversion
 
   // camera: slow orbit + kick zoom
   camAngle += dt * 0.08;
